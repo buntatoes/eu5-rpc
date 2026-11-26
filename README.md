@@ -24,7 +24,7 @@
   - Displays EU5's six historical Ages beginning in `1337` (`Age of Traditions`, `Age of Renaissance`, `Age of Discovery`, `Age of Reformation`, `Age of Absolutism`, `Age of Revolutions`).
 - **Ironman & Achievement Safe**: Strictly read-only — never reads game memory, modifies save files, installs mods, or intercepts network traffic.
 - **Zero Console Popups**: Uses native Win32 `CreateToolhelp32Snapshot` via Ruby `Fiddle` on Windows (and `/proc` on Linux) to detect `eu5.exe`.
-- **Windows `.exe` Installer + Desktop Shortcut**: `EU5-RPC-Setup-v0.1-win64.exe` installs `eu5-rpc.exe` to `%LOCALAPPDATA%\EU5-RPC`, creates Desktop & Start Menu shortcuts that launch Europa Universalis V (Steam AppID `3450310`) with Discord Rich Presence, and registers Windows Add/Remove Programs uninstall support.
+- **Windows `.exe` Installer + Desktop Shortcut**: `EU5-RPC-Setup-v0.2-win64.exe` installs `eu5-rpc.exe` to `%LOCALAPPDATA%\EU5-RPC`, creates Desktop & Start Menu shortcuts that launch Europa Universalis V (Steam AppID `3450310`) with Discord Rich Presence, and registers Windows Add/Remove Programs uninstall support.
 - **Linux Package**: `eu5-rpc-linux-x86_64.tar.gz` includes an XDG desktop entry and `install.sh` installer for `~/.local`.
 
 ## Installation & Setup
@@ -33,8 +33,8 @@ Requires [Ruby 3.2+](https://www.ruby-lang.org/) (tested on Ruby 3.4) and the Di
 
 ### Windows (`.exe` Installer)
 
-1. Download `EU5-RPC-Setup-v0.1-win64.exe` from the [Releases](../../releases) page (or build from source with `ruby scripts/package.rb --exe`).
-2. Run `EU5-RPC-Setup-v0.1-win64.exe` to install to `%LOCALAPPDATA%\EU5-RPC` and create the **"EU5 RPC"** Desktop shortcut.
+1. Download `EU5-RPC-Setup-v0.2-win64.exe` from the [Releases](../../releases) page (or build from source with `ruby scripts/package.rb --exe`).
+2. Run `EU5-RPC-Setup-v0.2-win64.exe` to install to `%LOCALAPPDATA%\EU5-RPC` and create the **"EU5 RPC"** Desktop shortcut.
 3. Double-click **"EU5 RPC"** on your Desktop to launch Europa Universalis V with Discord Rich Presence automatically.
 
 ### Linux (`.tar.gz` / XDG Desktop Installer)
@@ -53,7 +53,7 @@ eu5-rpc
 | `--no-launch` | Skip launching Europa Universalis V via Steam on startup. |
 | `--launch-with-command -- <command>` | Launch a custom command (for Steam `%command%` launch options). |
 | `--generate-config` | Write a fresh `config.toml` with default settings and exit. |
-| `-v`, `--version` | Print version (`v0.1.0`) and exit. |
+| `-v`, `--version` | Print version (`v0.2.0`) and exit. |
 | `-h`, `--help` | Show CLI usage help. |
 
 ## Building & Testing from Source
@@ -65,7 +65,7 @@ cd eu5-rpc
 # Run unit tests
 ruby -Ilib:test test/test_eu5_rpc.rb
 
-# Build dist/EU5-RPC-Setup-v0.1-win64.exe and dist/eu5-rpc-linux-x86_64.tar.gz
+# Build dist/EU5-RPC-Setup-v0.2-win64.exe and dist/eu5-rpc-linux-x86_64.tar.gz
 ruby scripts/package.rb
 ```
 
