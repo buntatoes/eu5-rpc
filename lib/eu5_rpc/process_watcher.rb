@@ -1,0 +1,98 @@
+# frozen_string_literal: true
+# SPDX-License-Identifier: GPL-3.0-only
+
+require_relative "game_state"
+require_relative "logger"
+
+module Eu5Rpc
+  # Native zero-subprocess process watcher (Win32 CreateToolhelp32Snapshot / Linux /proc).
+  # Never spawns console executables and never reads game memory.
+  module ProcessWatcher
+    POLL_INTERVAL_S = 3
+
+    if Gem.win_platform?
+      require "fiddle"
+      require "fiddle/import"
+
+      module Win32Snapshot
+        extend Fiddle::Importer
+        dlload "kernel32.dll"
+
+        TH32CS_SNAPPROCESS = 0x00000002
+        INVALID_HANDLE_VALUE = -1
+        EXE_NAME_OFFSET = (Fiddle::SIZEOF_VOIDP == 8) ? 44 : 36
+        PROCESSENTRY32_SIZE = EXE_NAME_OFFSET + 260
+
+        extern "void* CreateToolhelp32Snapshot(unsigned long, unsigned long)"
+        extern "int Process32First(void*, void*)"
+        extern "int Process32Next(void*, void*)"
+        extern "int CloseHandle(void*)"
+      end
+    end
+
+    module_function
+
+    def process_running?(target_name)
+      target = target_name.to_s.downcase
+      if Gem.win_platform?
+        win32_process_running?(target)
+      else
+        Dir.glob("/proc/[0-9]*/comm").any? do |comm_path|
+          name = File.read(comm_path).strip.downcase
+          name == target || name == target.sub(/\.exe\z/, "")
+        rescue StandardError
+          false
+        end
+      end
+    rescue StandardError
+      false
+    end
+
+    def win32_process_running?(target_lower)
+      snapshot = Win32Snapshot.CreateToolhelp32Snapshot(Win32Snapshot::TH32CS_SNAPPROCESS, 0)
+      return false if snapshot.null? || snapshot.to_i == Win32Snapshot::INVALID_HANDLE_VALUE
+
+      begin
+        buf = +"\0" * Win32Snapshot::PROCESSENTRY32_SIZE
+        buf[0, 4] = [Win32Snapshot::PROCESSENTRY32_SIZE].pack("V")
+        return false if Win32Snapshot.Process32First(snapshot, buf) == 0
+
+        loop do
+          raw_name = buf[Win32Snapshot::EXE_NAME_OFFSET, 260]
+          exe_name = raw_name.split("\0", 2).first.to_s.downcase
+          return true if exe_name == target_lower
+
+          break if Win32Snapshot.Process32Next(snapshot, buf) == 0
+        end
+        false
+      ensure
+        Win32Snapshot.CloseHandle(snapshot)
+      end
+    end
+
+    def eu5_running?
+      process_running?("eu5.exe")
+    end
+
+    def run(state, mutex)
+      was_running = false
+
+      loop do
+        running = eu5_running?
+
+        if running && !was_running
+          RpcLogger.info("[process] Europa Universalis V detected (eu5.exe)")
+          mutex.synchronize do
+            state.enter_loading if state.phase == GamePhase::NOT_RUNNING
+          end
+        elsif !running && was_running
+          RpcLogger.info("[process] Europa Universalis V exited - resetting state")
+          mutex.synchronize { state.reset }
+        end
+
+        was_running = running
+        sleep(POLL_INTERVAL_S)
+      end
+    end
+  end
+end

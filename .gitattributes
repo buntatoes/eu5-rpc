@@ -1,0 +1,5 @@
+bin/eu5-rpc linguist-language=Ruby linguist-detectable=true
+*.rb linguist-language=Ruby linguist-detectable=true
+Rakefile linguist-language=Ruby linguist-detectable=true
+*.gemspec linguist-language=Ruby linguist-detectable=true
+packaging/** linguist-vendored
