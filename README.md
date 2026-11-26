@@ -5,11 +5,13 @@
 
   Show your **Europa Universalis V** country, current year, historical Age, campaign mode (Singleplayer / Multiplayer / Observer), game version, and live wars/disasters on your Discord profile automatically. Free, open-source, zero-dependency Ruby tool for **Windows (`.exe` installer)** and **Linux**, licensed under **GPL-3.0**.
 
-  [![Latest Release](https://img.shields.io/github/v/release/buntatoes/eu5-rpc?label=release)](https://github.com/buntatoes/eu5-rpc/releases/latest)
-  [![CI](https://img.shields.io/github/actions/workflow/status/buntatoes/eu5-rpc/ci.yml?branch=main&label=CI)](https://github.com/buntatoes/eu5-rpc/actions/workflows/ci.yml)
-  [![Ruby](https://img.shields.io/badge/language-Ruby%203.2%2B-CC342D?logo=ruby&logoColor=white)](#installation--setup)
-  [![Platform](https://img.shields.io/badge/platform-Windows%20(.exe)%20%7C%20Linux-blue)](#installation--setup)
-  [![License: GPL v3](https://img.shields.io/github/license/buntatoes/eu5-rpc)](LICENSE)
+  <p>
+    <a href="https://github.com/buntatoes/eu5-rpc/releases/latest"><img src="https://img.shields.io/github/v/release/buntatoes/eu5-rpc?label=release" alt="Latest Release" /></a>
+    <a href="https://github.com/buntatoes/eu5-rpc/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/buntatoes/eu5-rpc/ci.yml?branch=main&label=CI" alt="CI" /></a>
+    <a href="#installation--setup"><img src="https://img.shields.io/badge/language-Ruby%203.2%2B-CC342D?logo=ruby&logoColor=white" alt="Ruby 3.2+" /></a>
+    <a href="#installation--setup"><img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-blue" alt="Platform: Windows | Linux" /></a>
+    <a href="LICENSE"><img src="https://img.shields.io/github/license/buntatoes/eu5-rpc" alt="License: GPL-3.0" /></a>
+  </p>
 
 </div>
 
