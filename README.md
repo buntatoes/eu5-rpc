@@ -46,6 +46,9 @@ Requires [Ruby 3.2+](https://www.ruby-lang.org/) (tested on Ruby 3.4) and the Di
 2. Run `EU5-RPC-Setup-v0.3.3-win64.exe` to install to `%LOCALAPPDATA%\EU5-RPC` and create the **"EU5 RPC"** Desktop shortcut.
 3. Double-click **"EU5 RPC"** on your Desktop to launch Europa Universalis V with Discord Rich Presence automatically.
 
+> [!NOTE]
+> Windows may show a **"Windows protected your PC"** warning. This happens because the app is not signed, not because it is harmful. Click **More info**, then **Run anyway**. If you'd rather verify the code yourself, [build from source](#building--testing-from-source).
+
 ### Linux (`.tar.gz` / XDG Desktop Installer)
 
 ```bash
