@@ -10,9 +10,7 @@ module Eu5Rpc
   module SaveInspector
     SaveMetadata = Struct.new(:country_name, :country_tag, :year, :date_str, :multiplayer, :game_version, keyword_init: true)
 
-    # Example filename: SP_POR_1382_01_11_<uuid>.eu5 or MP_FRA_1453_05_29_<uuid>.eu5
-    FILENAME_RE = /\A(SP|MP)_([A-Z0-9]{2,4})_(\d{3,4})_(\d{2})_(\d{2})_/i.freeze
-    # Header display string embedded in EU5 save header: "1382.1.11 - Portugal"
+    FILENAME_RE = /\A(SP|MP)_([A-Z0-9]{2,5})_(\d{3,4})_(\d{2})_(\d{2})_/i.freeze
     HEADER_DATE_COUNTRY_RE = /(\d{3,4}\.\d{1,2}\.\d{1,2})\s+-\s+([^\x00-\x1f\r\n]{2,64})/.freeze
     HEADER_TAG_RE = /\b([A-Z0-9]{3})=\{/.freeze
     HEADER_VERSION_RE = /\b(\d{1,2}\.\d{1,2}\.\d{1,2})\b/.freeze
@@ -20,33 +18,52 @@ module Eu5Rpc
     module_function
 
     def inspect_user_data_dir(user_data_dir)
-      return nil unless user_data_dir && File.directory?(user_data_dir)
+      dir = user_data_dir.to_s.tr("\\", "/")
+      return nil if dir.empty? || !File.directory?(dir)
 
       version = nil
-      continue_path = File.join(user_data_dir, "continue_game.json")
-      if File.exist?(continue_path)
+      continue_title = nil
+      continue_path = File.join(dir, "continue_game.json")
+      if File.file?(continue_path)
         begin
           cj = JSON.parse(File.read(continue_path, encoding: "UTF-8"))
-          version = cj["rawGameVersion"].to_s.strip
-          version = nil if version.empty?
+          v = cj["rawGameVersion"].to_s.strip
+          version = v unless v.empty?
+          t = cj["title"].to_s.strip
+          continue_title = t unless t.empty?
         rescue StandardError
           # Ignore malformed JSON
         end
       end
 
-      saves_dir = File.join(user_data_dir, "save games")
-      newest_save = find_newest_save(saves_dir)
-      return version ? SaveMetadata.new(game_version: version) : nil unless newest_save
+      saves_dir = File.join(dir, "save games")
+      target_save = find_newest_save(saves_dir)
+      if target_save.nil? && continue_title
+        candidate = File.join(saves_dir, "#{continue_title}.eu5")
+        target_save = candidate if File.file?(candidate)
+      end
 
-      meta = parse_save_file(newest_save)
+      unless target_save
+        if continue_title
+          meta = parse_filename("#{continue_title}.eu5")
+          meta.game_version ||= version
+          return meta
+        end
+        return version ? SaveMetadata.new(game_version: version) : nil
+      end
+
+      meta = parse_save_file(target_save)
       meta.game_version ||= version
       meta
     end
 
     def find_newest_save(saves_dir)
-      return nil unless File.directory?(saves_dir)
+      dir = saves_dir.to_s.tr("\\", "/")
+      return nil unless File.directory?(dir)
 
-      Dir.glob(File.join(saves_dir, "*.eu5"))
+      Dir.children(dir)
+         .select { |name| name.downcase.end_with?(".eu5") }
+         .map { |name| File.join(dir, name) }
          .select { |p| File.file?(p) }
          .max_by { |p| File.mtime(p) }
     rescue StandardError

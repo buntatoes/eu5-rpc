@@ -106,4 +106,33 @@ class TestEu5Rpc < Minitest::Test
     assert_equal "Playing as France (1454)", payload["details"]
     assert_equal "https://raw.githubusercontent.com/buntatoes/eu5-rpc/main/assets/icon.png", payload.dig("assets", "large_image")
   end
+
+  def test_country_lookup_and_live_multiplayer_country_selection
+    Dir.mktmpdir do |dir|
+      loc_dir = File.join(dir, "game", "main_menu", "localization", "english")
+      FileUtils.mkdir_p(loc_dir)
+      File.write(
+        File.join(loc_dir, "country_names_l_english.yml"),
+        "l_english:\n POR: \"Portugal\"\n CUSTOM: \"Custom Empire\"\n"
+      )
+
+      lookup = Eu5Rpc::CountryLookup.new(dir)
+      assert_equal "Portugal", lookup.resolve("POR")
+      assert_equal "Custom Empire", lookup.resolve("CUSTOM")
+      assert_nil lookup.resolve("No")
+
+      state = Eu5Rpc::GameState.new
+      Eu5Rpc::LogWatcher.process_multiplayer_line("New Country: POR", state, lookup)
+      assert_equal "POR", state.country_tag
+      assert_equal "Portugal", state.country_name
+      assert_equal Eu5Rpc::GamePhase::IN_GAME, state.phase
+
+      Eu5Rpc::LogWatcher.process_game_line("[17:54:09][situation_manager.cpp:384]: SITUATION: Rise of the Turks starts on 1 May, 1337", state)
+      assert_equal 1337, state.year
+
+      cfg = Eu5Rpc::Config.new
+      details, _status = state.format_presence(cfg.presence)
+      assert_equal "Playing as Portugal (1337)", details
+    end
+  end
 end
