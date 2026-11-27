@@ -17,10 +17,9 @@
 
 ## Preview
 
-<p align="center">
-  <img src="assets/preview-hungary.png" alt="EU5 Discord Rich Presence showing Kingdom of Hungary" width="380" />
-  <img src="assets/preview-castile.png" alt="EU5 Discord Rich Presence dynamically updating to Crown of Castile (1337)" width="380" />
-</p>
+<div align="center">
+  <img src="assets/demo.gif" alt="EU5 Discord Rich Presence cycling live across Kingdom of Hungary, Crown of Castile, Kingdom of Sweden at war, and Kingdom of England in the Hundred Years' War" width="416" />
+</div>
 
 ## Features
 
