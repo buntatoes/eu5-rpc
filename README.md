@@ -15,6 +15,13 @@
 
 </div>
 
+## Preview
+
+<p align="center">
+  <img src="assets/preview-hungary.png" alt="EU5 Discord Rich Presence showing Kingdom of Hungary" width="380" />
+  <img src="assets/preview-castile.png" alt="EU5 Discord Rich Presence dynamically updating to Crown of Castile (1337)" width="380" />
+</p>
+
 ## Features
 
 - **100% Pure Ruby Core (Zero External Gems)**: Runs on standard Ruby (`3.2+` / `3.4+`) using only the Ruby standard library (`json`, `socket`, `fiddle`, `win32/registry`, `zlib`).
