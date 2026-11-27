@@ -15,7 +15,7 @@ require_relative "eu5_rpc/process_watcher"
 require_relative "eu5_rpc/steam"
 
 module Eu5Rpc
-  VERSION = "0.3.2"
+  VERSION = "0.3.3"
   # Official public Discord detectable-application ID for Europa Universalis V (not user-specific).
   DEFAULT_DISCORD_APP_ID = "1435327845051400292"
   SINGLE_INSTANCE_PORT = 47_785

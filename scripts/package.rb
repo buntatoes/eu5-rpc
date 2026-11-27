@@ -51,24 +51,29 @@ module Packager
   end
 
   def build_windows_installer
-    unless Gem.win_platform?
-      puts "[package] Skipping Windows .exe installer build on non-Windows host"
-      return
+    if Gem.win_platform?
+      gcc = find_tool("gcc.exe", [
+        "C:/Ruby*-x64/msys64/ucrt64/bin/gcc.exe",
+        "C:/msys64/ucrt64/bin/gcc.exe"
+      ])
+      raise "gcc.exe not found" unless gcc
+
+      windres = find_tool("windres.exe", [
+        "C:/Ruby*-x64/msys64/ucrt64/bin/windres.exe",
+        "C:/msys64/ucrt64/bin/windres.exe"
+      ])
+      raise "windres.exe not found" unless windres
+
+      env = { "PATH" => "#{File.dirname(gcc)};#{ENV['PATH']}" }
+    else
+      gcc = find_tool("x86_64-w64-mingw32-gcc")
+      windres = find_tool("x86_64-w64-mingw32-windres")
+      unless gcc && windres
+        puts "[package] Skipping Windows .exe installer build (x86_64-w64-mingw32-gcc/windres not found)"
+        return
+      end
+      env = {}
     end
-
-    gcc = find_tool("gcc.exe", [
-      "C:/Ruby*-x64/msys64/ucrt64/bin/gcc.exe",
-      "C:/msys64/ucrt64/bin/gcc.exe"
-    ])
-    raise "gcc.exe not found" unless gcc
-
-    windres = find_tool("windres.exe", [
-      "C:/Ruby*-x64/msys64/ucrt64/bin/windres.exe",
-      "C:/msys64/ucrt64/bin/windres.exe"
-    ])
-    raise "windres.exe not found" unless windres
-
-    env = { "PATH" => "#{File.dirname(gcc)};#{ENV['PATH']}" }
 
     Dir.mktmpdir("eu5-rpc-win64") do |stage|
       icon_src = File.join(ROOT_DIR, "assets", "icon.ico")
@@ -79,7 +84,7 @@ module Packager
 
       host_src = File.join(ROOT_DIR, "packaging", "host", "eu5_rpc_host.c")
       host_exe = File.join(stage, "eu5-rpc.exe")
-      ok = system(env, gcc, "-O2", "-Wall", "-Wextra", "-mwindows", host_src, host_res, "-o", host_exe)
+      ok = system(env, gcc, "-O2", "-s", "-Wall", "-Wextra", "-mwindows", host_src, host_res, "-o", host_exe)
       raise "Failed to compile eu5-rpc.exe" unless ok
 
       payload_entries = [
@@ -120,7 +125,7 @@ module Packager
       FileUtils.rm_f(setup_exe_out)
       ok = system(
         env,
-        gcc, "-O2", "-Wall", "-Wextra", "-mwindows",
+        gcc, "-O2", "-s", "-Wall", "-Wextra", "-mwindows",
         installer_src, setup_res,
         "-lole32", "-lshell32", "-luuid", "-ladvapi32",
         "-o", setup_exe_out
@@ -155,7 +160,7 @@ module Packager
     if !Gem.win_platform? && (gcc = find_tool("gcc"))
       linux_elf = File.join(DIST_DIR, "eu5-rpc-elf")
       host_src = File.join(ROOT_DIR, "packaging", "host", "eu5_rpc_host.c")
-      system(gcc, "-O2", "-Wall", "-Wextra", host_src, "-o", linux_elf)
+      system(gcc, "-O2", "-s", "-Wall", "-Wextra", host_src, "-o", linux_elf)
     end
 
     File.open(tar_gz_out, "wb") do |file|
