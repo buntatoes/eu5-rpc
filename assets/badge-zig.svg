@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="136" height="20" role="img" aria-label="language: Zig 0.17">
+  <title>language: Zig 0.17</title>
+  <linearGradient id="s" x2="0" y2="100%">
+    <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
+    <stop offset="1" stop-opacity=".1"/>
+  </linearGradient>
+  <clipPath id="r">
+    <rect width="136" height="20" rx="3" fill="#fff"/>
+  </clipPath>
+  <g clip-path="url(#r)">
+    <rect width="78" height="20" fill="#555"/>
+    <rect x="78" width="58" height="20" fill="#f7a41d"/>
+    <rect width="136" height="20" fill="url(#s)"/>
+  </g>
+  <g transform="translate(5, 3) scale(0.5833)" fill="#fff">
+    <path d="M23.53 1.02l-7.686 3.45h-7.06l-2.98 3.452h7.173L.47 22.98l7.681-3.607h7.065v-.002l2.978-3.45-7.148-.001 12.482-14.9zM0 4.47v14.901h1.883l2.98-3.45H3.451v-8h.942l2.824-3.45H0zm22.117 0l-2.98 3.608h1.412v7.844h-.942l-2.98 3.45H24V4.47h-1.883z"/>
+  </g>
+  <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" text-rendering="geometricPrecision" font-size="110">
+    <text aria-hidden="true" x="485" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="510">language</text>
+    <text x="485" y="140" transform="scale(.1)" fill="#fff" textLength="510">language</text>
+    <text aria-hidden="true" x="1060" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="470">Zig 0.17</text>
+    <text x="1060" y="140" transform="scale(.1)" fill="#fff" textLength="470">Zig 0.17</text>
+  </g>
+</svg>

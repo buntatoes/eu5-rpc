@@ -2,35 +2,34 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, unstable]
   pull_request:
-    branches: [main]
+    branches: [main, unstable]
 
 permissions:
   contents: read
 
 jobs:
   test:
-    name: Ruby (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-
+    runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Set up Ruby
-        uses: ruby/setup-ruby@v1
+      - name: Set up Zig 0.17.1
+        uses: mlugg/setup-zig@v2
         with:
-          ruby-version: "3.4"
+          version: 0.17.1
 
-      - name: Check Ruby syntax
-        run: ruby -c bin/eu5-rpc lib/eu5_rpc.rb lib/eu5_rpc/*.rb scripts/package.rb test/test_eu5_rpc.rb
+      - name: Run Zig unit tests
+        run: zig build test
 
-      - name: Run Minitest suite
-        run: ruby -Ilib:test test/test_eu5_rpc.rb
+      - name: Build native release binary
+        run: zig build -Doptimize=ReleaseSafe
 
-      - name: Build Windows EXE installer and Linux packages
-        run: ruby scripts/package.rb
+      - name: Build Windows installer and Linux release bundle
+        run: zig build package

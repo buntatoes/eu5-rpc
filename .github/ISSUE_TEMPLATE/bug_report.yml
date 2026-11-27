@@ -25,7 +25,7 @@ body:
     id: app_version
     attributes:
       label: EU5 RPC Version
-      placeholder: "e.g., v0.3.1"
+      placeholder: "e.g., v4.0.0-unstable"
     validations:
       required: true
 
@@ -59,7 +59,7 @@ body:
   - type: textarea
     id: logs
     attributes:
-      label: Additional Details
+      label: Optional Output (`eu5-rpc --once`)
       description: Paste any sanitized console output (remove any personal info or local paths).
       render: text
     validations:

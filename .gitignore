@@ -1,6 +1,10 @@
+/zig-out/
+/zig-out-linux/
+/.zig-cache/
 /dist/
 /logs/
 /config.toml
-/*.gem
-/pkg/
-/.bundle/
+*.o
+*.obj
+*.res
+*.exe
