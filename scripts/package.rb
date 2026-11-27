@@ -84,7 +84,8 @@ module Packager
 
       host_src = File.join(ROOT_DIR, "packaging", "host", "eu5_rpc_host.c")
       host_exe = File.join(stage, "eu5-rpc.exe")
-      ok = system(env, gcc, "-O2", "-s", "-Wall", "-Wextra", "-mwindows", host_src, host_res, "-o", host_exe)
+      prefix_map = "-ffile-prefix-map=#{ROOT_DIR}=."
+      ok = system(env, gcc, "-O2", "-s", prefix_map, "-Wall", "-Wextra", "-mwindows", host_src, host_res, "-o", host_exe)
       raise "Failed to compile eu5-rpc.exe" unless ok
 
       payload_entries = [
@@ -125,7 +126,7 @@ module Packager
       FileUtils.rm_f(setup_exe_out)
       ok = system(
         env,
-        gcc, "-O2", "-s", "-Wall", "-Wextra", "-mwindows",
+        gcc, "-O2", "-s", prefix_map, "-Wall", "-Wextra", "-mwindows",
         installer_src, setup_res,
         "-lole32", "-lshell32", "-luuid", "-ladvapi32",
         "-o", setup_exe_out
@@ -160,7 +161,7 @@ module Packager
     if !Gem.win_platform? && (gcc = find_tool("gcc"))
       linux_elf = File.join(DIST_DIR, "eu5-rpc-elf")
       host_src = File.join(ROOT_DIR, "packaging", "host", "eu5_rpc_host.c")
-      system(gcc, "-O2", "-s", "-Wall", "-Wextra", host_src, "-o", linux_elf)
+      system(gcc, "-O2", "-s", "-ffile-prefix-map=#{ROOT_DIR}=.", "-Wall", "-Wextra", host_src, "-o", linux_elf)
     end
 
     File.open(tar_gz_out, "wb") do |file|
