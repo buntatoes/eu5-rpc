@@ -82,7 +82,7 @@ module Eu5Rpc
       state = GameState.new
       mutex = Mutex.new
 
-      Thread.new { LogWatcher.new(user_data_dir, cfg.general.poll_interval_ms, country_lookup, steam_rp).run(state, mutex) }
+      Thread.new { LogWatcher.new(user_data_dir, cfg.general.poll_interval_ms, country_lookup, steam_rp, cfg.general.user_data_folder).run(state, mutex) }
       Thread.new { ProcessWatcher.run(state, mutex) }
 
       run_rpc_loop(state, mutex, cfg)

@@ -246,4 +246,51 @@ class TestEu5Rpc < Minitest::Test
     assert_equal true, obs[:observer]
     assert_equal 1444, obs[:year]
   end
+
+  def test_linux_proton_cmdline_process_matching
+    pw = Eu5Rpc::ProcessWatcher
+    assert_equal true, pw.cmdline_matches_target?("Z:\\mnt\\games\\SteamLibrary\\steamapps\\common\\Europa Universalis V\\binaries\\eu5.exe\0", "eu5.exe")
+    assert_equal true, pw.cmdline_matches_target?("Z:\\path\\to\\binaries\\eu5.exe -gdpr\0", "eu5.exe")
+    assert_equal true, pw.cmdline_matches_target?("/opt/proton/bin/wine64-preloader\0Z:\\path\\to\\eu5.exe\0", "eu5.exe")
+    assert_equal true, pw.cmdline_matches_target?("/usr/bin/reaper\0SteamLaunch\0AppId=3450310\0--\0/opt/proton\0waitforexitandrun\0/mnt/games/binaries/eu5.exe\0", "eu5.exe")
+    assert_equal true, pw.cmdline_matches_target?("/usr/bin/python3\0/opt/proton\0waitforexitandrun\0/mnt/games/binaries/eu5.exe\0", "eu5.exe")
+    assert_equal true, pw.cmdline_matches_target?("/mnt/games/binaries/eu5\0", "eu5.exe")
+
+    assert_equal false, pw.cmdline_matches_target?("ruby\0/usr/local/bin/eu5-rpc\0", "eu5.exe")
+    assert_equal false, pw.cmdline_matches_target?("/usr/bin/steam\0-applaunch\03450310\0", "eu5.exe")
+    assert_equal false, pw.cmdline_matches_target?("bash\0-c\0echo eu5.exe\0", "eu5.exe")
+    assert_equal false, pw.cmdline_matches_target?("python3\0script.py\0--target=eu5.exe\0", "eu5.exe")
+  end
+
+  def test_proton_user_data_candidates_prioritization
+    skip if Gem.win_platform?
+
+    Dir.mktmpdir do |dir|
+      lib_empty = File.join(dir, "SteamEmpty")
+      lib_eu5 = File.join(dir, "SteamGames")
+      proton_docs = File.join(
+        lib_eu5, "steamapps", "compatdata", Eu5Rpc::Steam::EU5_APP_ID,
+        "pfx", "drive_c", "users", "steamuser", "Documents",
+        "Paradox Interactive", "Europa Universalis V"
+      )
+      FileUtils.mkdir_p(lib_empty)
+      FileUtils.mkdir_p(proton_docs)
+
+      candidates = Eu5Rpc::Steam.proton_user_data_candidates([lib_empty, lib_eu5])
+      assert_equal proton_docs, candidates.first
+      assert_equal 2, candidates.size
+    end
+  end
+
+  def test_log_watcher_reads_continue_game_version_fallback
+    Dir.mktmpdir do |dir|
+      File.write(File.join(dir, "continue_game.json"), '{"rawGameVersion":"1.4.9"}')
+      state = Eu5Rpc::GameState.new
+      mutex = Mutex.new
+      watcher = Eu5Rpc::LogWatcher.new(dir, 1000)
+      watcher.send(:refresh_save_metadata, state, mutex, skip_country: true)
+      assert_equal "1.4.9", state.game_version
+      assert_nil state.country_name
+    end
+  end
 end

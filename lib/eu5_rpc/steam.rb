@@ -15,6 +15,13 @@ module Eu5Rpc
       path.to_s.tr("\\", "/")
     end
 
+    def find_existing_user_data_dir(override = nil)
+      custom = normalize_path(override.to_s.strip)
+      return custom if !custom.empty? && File.directory?(custom)
+
+      user_data_candidates.find { |dir| File.directory?(dir) }
+    end
+
     def find_user_data_dir(override = nil)
       custom = normalize_path(override.to_s.strip)
       if !custom.empty? && File.directory?(custom)
@@ -28,26 +35,67 @@ module Eu5Rpc
         return candidate
       end
 
-      fallback = user_data_candidates.first
+      fallback = !custom.empty? ? custom : user_data_candidates.first
       RpcLogger.warn("[eu5] Paradox EU5 user data folder not found yet. Monitoring default: #{fallback}")
       fallback
     end
 
-    def find_game_install_dir
+    def steam_library_paths
+      paths = []
       steam_vdf_locations.each do |vdf_path|
         next unless File.file?(vdf_path)
 
         content = File.read(vdf_path, encoding: "UTF-8")
         content.scan(VDF_PATH_RE) do |match|
           lib_path = normalize_path(match[0].gsub("\\\\", "/"))
-          manifest = File.join(lib_path, "steamapps", "appmanifest_#{EU5_APP_ID}.acf")
-          next unless File.file?(manifest)
+          paths << lib_path unless lib_path.empty?
+        end
+      rescue StandardError
+        next
+      end
 
-          mtext = File.read(manifest, encoding: "UTF-8")
-          if (m = INSTALLDIR_RE.match(mtext))
-            game_path = File.join(lib_path, "steamapps", "common", m[1])
-            return game_path if File.directory?(game_path)
-          end
+      unless Gem.win_platform?
+        home = Dir.home rescue ""
+        unless home.empty?
+          paths << File.join(home, ".local/share/Steam")
+          paths << File.join(home, ".steam/steam")
+        end
+      end
+
+      paths.uniq
+    end
+
+    def proton_user_data_candidates(library_paths = steam_library_paths)
+      return [] if Gem.win_platform?
+
+      prioritized = []
+      secondary = []
+      library_paths.each do |lib_path|
+        prefix_docs = File.join(
+          lib_path, "steamapps", "compatdata", EU5_APP_ID,
+          "pfx", "drive_c", "users", "steamuser", "Documents",
+          "Paradox Interactive", "Europa Universalis V"
+        )
+        manifest = File.join(lib_path, "steamapps", "appmanifest_#{EU5_APP_ID}.acf")
+        compat = File.join(lib_path, "steamapps", "compatdata", EU5_APP_ID)
+        if File.directory?(prefix_docs) || File.file?(manifest) || File.directory?(compat)
+          prioritized << prefix_docs
+        else
+          secondary << prefix_docs
+        end
+      end
+      (prioritized + secondary).uniq
+    end
+
+    def find_game_install_dir
+      steam_library_paths.each do |lib_path|
+        manifest = File.join(lib_path, "steamapps", "appmanifest_#{EU5_APP_ID}.acf")
+        next unless File.file?(manifest)
+
+        mtext = File.read(manifest, encoding: "UTF-8")
+        if (m = INSTALLDIR_RE.match(mtext))
+          game_path = File.join(lib_path, "steamapps", "common", m[1])
+          return game_path if File.directory?(game_path)
         end
       rescue StandardError
         next
@@ -70,10 +118,11 @@ module Eu5Rpc
         candidates.uniq
       else
         home = Dir.home rescue ""
-        [
+        native = [
           File.join(home, ".local", "share", "Paradox Interactive", "Europa Universalis V"),
           File.join(home, ".paradoxinteractive", "Europa Universalis V")
         ]
+        (proton_user_data_candidates + native).uniq
       end
     end
 

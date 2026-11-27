@@ -1,9 +1,12 @@
 # frozen_string_literal: true
 # SPDX-License-Identifier: GPL-3.0-only
 
+require "json"
 require_relative "game_state"
 require_relative "country_lookup"
 require_relative "save_inspector"
+require_relative "process_watcher"
+require_relative "steam"
 require_relative "logger"
 
 module Eu5Rpc
@@ -124,8 +127,9 @@ module Eu5Rpc
       end
     end
 
-    def initialize(user_data_dir, poll_interval_ms, country_lookup = nil, steam_rp = nil)
+    def initialize(user_data_dir, poll_interval_ms, country_lookup = nil, steam_rp = nil, configured_user_data_dir = nil)
       @user_data_dir = user_data_dir.to_s.tr("\\", "/")
+      @configured_user_data_dir = configured_user_data_dir
       @poll_interval_s = [poll_interval_ms.to_f / 1000.0, 0.25].max
       @country_lookup = country_lookup || CountryLookup.new
       @steam_rp = steam_rp
@@ -135,38 +139,77 @@ module Eu5Rpc
     end
 
     def run(state, mutex)
-      logs_dir  = File.join(@user_data_dir, "logs")
-      debug_log = File.join(logs_dir, "debug.log")
-      game_log  = File.join(logs_dir, "game.log")
-      mp_log    = File.join(logs_dir, "multiplayer.log")
-
-      # Ignore stale log contents written by previous sessions before eu5-rpc started.
-      [debug_log, game_log, mp_log].each do |p|
-        if File.file?(p) && File.mtime(p).to_f < (@session_started_at - 3.0)
-          @offsets[p] = File.size(p) rescue 0
-        end
-      end
+      seed_initial_log_offsets(@user_data_dir)
 
       loop do
-        steam_rp_data = @steam_rp&.poll
-        if steam_rp_data
-          mutex.synchronize { state.apply_steam_rich_presence(steam_rp_data) }
-        end
+        ensure_user_data_dir!
 
-        tail_log(debug_log, state, mutex) { |line, gs| self.class.process_debug_line(line, gs) }
-        tail_log(mp_log, state, mutex)    { |line, gs| self.class.process_multiplayer_line(line, gs, @country_lookup) }
-        tail_log(game_log, state, mutex)  { |line, gs| self.class.process_game_line(line, gs) }
-        refresh_save_metadata(state, mutex) unless steam_rp_data && steam_rp_data[:country]
+        logs_dir  = File.join(@user_data_dir, "logs")
+        debug_log = File.join(logs_dir, "debug.log")
+        game_log  = File.join(logs_dir, "game.log")
+        mp_log    = File.join(logs_dir, "multiplayer.log")
+
+        if ProcessWatcher.eu5_running?
+          steam_rp_data = @steam_rp&.poll
+          if steam_rp_data
+            mutex.synchronize { state.apply_steam_rich_presence(steam_rp_data) }
+          end
+
+          tail_log(debug_log, state, mutex) { |line, gs| self.class.process_debug_line(line, gs) }
+          tail_log(mp_log, state, mutex)    { |line, gs| self.class.process_multiplayer_line(line, gs, @country_lookup) }
+          tail_log(game_log, state, mutex)  { |line, gs| self.class.process_game_line(line, gs) }
+          refresh_save_metadata(state, mutex, skip_country: !!(steam_rp_data && steam_rp_data[:country]))
+        else
+          @steam_rp&.disconnect
+        end
         sleep(@poll_interval_s)
       end
     end
 
     private
 
-    def refresh_save_metadata(state, mutex)
+    def seed_initial_log_offsets(dir)
+      # If EU5 is already running when eu5-rpc starts, read the live session's logs;
+      # otherwise skip stale log contents written by previous sessions.
+      return if ProcessWatcher.eu5_running?
+
+      logs_dir = File.join(dir, "logs")
+      %w[debug.log game.log multiplayer.log].each do |fname|
+        p = File.join(logs_dir, fname)
+        if File.file?(p) && File.mtime(p).to_f < (@session_started_at - 3.0)
+          @offsets[p] = File.size(p) rescue 0
+        end
+      end
+    end
+
+    def ensure_user_data_dir!
+      return if File.directory?(File.join(@user_data_dir, "logs"))
+
+      detected = Steam.find_existing_user_data_dir(@configured_user_data_dir)
+      return unless detected && detected != @user_data_dir
+
+      @user_data_dir = detected
+      @offsets.clear
+      @last_save_key = nil
+      RpcLogger.info("[eu5] Switched to detected Paradox user data folder: #{@user_data_dir}")
+    end
+
+    def refresh_save_metadata(state, mutex, skip_country: false)
+      continue_path = File.join(@user_data_dir, "continue_game.json")
+      if state.game_version.nil? && File.file?(continue_path)
+        begin
+          cj = JSON.parse(File.read(continue_path, encoding: "UTF-8"))
+          v = cj["rawGameVersion"].to_s.strip
+          mutex.synchronize { state.game_version ||= v } unless v.empty?
+        rescue StandardError
+          # Ignore malformed JSON
+        end
+      end
+
+      return if skip_country
+
       saves_dir = File.join(@user_data_dir, "save games")
       newest = SaveInspector.find_newest_save(saves_dir)
-      continue_path = File.join(@user_data_dir, "continue_game.json")
       save_mtime = newest ? (File.mtime(newest).to_f rescue nil) : nil
       cont_mtime = File.file?(continue_path) ? (File.mtime(continue_path).to_f rescue nil) : nil
 

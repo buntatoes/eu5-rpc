@@ -37,14 +37,61 @@ module Eu5Rpc
       if Gem.win_platform?
         win32_process_running?(target)
       else
-        Dir.glob("/proc/[0-9]*/comm").any? do |comm_path|
-          name = File.read(comm_path).strip.downcase
-          name == target || name == target.sub(/\.exe\z/, "")
-        rescue StandardError
-          false
-        end
+        linux_process_running?(target)
       end
     rescue StandardError
+      false
+    end
+
+    def linux_process_running?(target_lower)
+      stem = target_lower.sub(/\.exe\z/, "")
+
+      Dir.glob("/proc/[0-9]*").any? do |proc_dir|
+        comm = (File.read(File.join(proc_dir, "comm")) rescue "").strip.downcase
+        next true if comm == target_lower || comm == stem
+
+        raw_cmd = (File.binread(File.join(proc_dir, "cmdline")) rescue "")
+        next false if raw_cmd.empty?
+
+        cmdline_matches_target?(raw_cmd, target_lower, stem)
+      end
+    rescue StandardError
+      false
+    end
+
+    def cmdline_matches_target?(raw_cmd, target_lower, stem = target_lower.sub(/\.exe\z/, ""))
+      args = raw_cmd.to_s.split("\0").reject(&:empty?)
+      return false if args.empty?
+
+      argv0 = args[0]
+      argv0_base = File.basename(argv0.tr("\\", "/")).downcase
+      return true if argv0_base == target_lower || argv0_base == stem
+      return true if matches_windows_exe?(argv0, target_lower)
+
+      if argv0_base.start_with?("wine") || argv0_base == "proton" || argv0_base == "reaper" || argv0_base == "python3"
+        args[1..].any? do |arg|
+          next false if arg.start_with?("-")
+
+          matches_windows_exe?(arg, target_lower)
+        end
+      else
+        false
+      end
+    end
+
+    def matches_windows_exe?(arg, target_lower)
+      s = arg.to_s.tr("\\", "/").strip
+      return false if s.empty?
+
+      return true if File.basename(s).downcase == target_lower
+
+      if (idx = s.downcase.index(target_lower))
+        before = idx.zero? ? "/" : s[idx - 1]
+        after = s[idx + target_lower.length]
+        return (before == "/" || before == " " || before == '"') &&
+               (after.nil? || after == " " || after == '"' || after == "\t")
+      end
+
       false
     end
 
