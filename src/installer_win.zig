@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// 100% Pure Zig Windows GUI Installer & Uninstaller for EU5 RPC (v4.0.0).
+// 100% Pure Zig Windows GUI Installer & Uninstaller for EU5 RPC (v4.1.0).
 // - Extracts embedded native eu5-rpc.exe, icons, LICENSE, and README.md to %LOCALAPPDATA%\EU5-RPC
 // - Cleans up legacy Ruby files (lib/, bin/) and Eu5RpcRuby uninstall entry on upgrade (preserving config.toml)
 // - Creates Desktop ("EU5 RPC.lnk") and Start Menu shortcuts using Win32 COM IShellLinkW
@@ -151,7 +151,7 @@ extern "advapi32" fn RegCloseKey(hKey: HKEY) callconv(.winapi) i32;
 extern "advapi32" fn RegDeleteTreeW(hKey: HKEY, lpSubKey: ?[*:0]const u16) callconv(.winapi) i32;
 
 const APP_DISPLAY_NAME = std.unicode.utf8ToUtf16LeStringLiteral("EU5 RPC (Europa Universalis V)");
-const APP_VERSION = std.unicode.utf8ToUtf16LeStringLiteral("4.0.0");
+const APP_VERSION = std.unicode.utf8ToUtf16LeStringLiteral("4.1.0");
 const APP_PUBLISHER = std.unicode.utf8ToUtf16LeStringLiteral("Buntato");
 const UNINSTALL_REG_KEY = std.unicode.utf8ToUtf16LeStringLiteral("Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Eu5RpcZig");
 const LEGACY_UNINSTALL_REG_KEY = std.unicode.utf8ToUtf16LeStringLiteral("Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Eu5RpcRuby");
@@ -358,7 +358,7 @@ fn doInstall(silent: bool) void {
     if (!silent) {
         var prompt_buf: [1024]u16 = undefined;
         const prompt = concatW(&prompt_buf, &.{
-            std.unicode.utf8ToUtf16LeStringLiteral("Install EU5 RPC (Europa Universalis V Discord Rich Presence) v4.0.0?\n\nInstall folder:\n"),
+            std.unicode.utf8ToUtf16LeStringLiteral("Install EU5 RPC (Europa Universalis V Discord Rich Presence) v4.1.0?\n\nInstall folder:\n"),
             install_dir,
             std.unicode.utf8ToUtf16LeStringLiteral("\n\nThis will also create an \"EU5 RPC\" shortcut on your Desktop to launch Europa Universalis V with Discord Rich Presence."),
         });

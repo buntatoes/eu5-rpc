@@ -25,7 +25,7 @@ body:
     id: app_version
     attributes:
       label: EU5 RPC Version
-      placeholder: "e.g., v4.0.0"
+      placeholder: "e.g., v4.1.0"
     validations:
       required: true
 

@@ -13,6 +13,9 @@ fn addCoreExecutable(
         .link_libc = true,
         .strip = (optimize != .debug),
     });
+    mod.addAnonymousImport("icon_png", .{
+        .root_source_file = b.path("assets/icon.png"),
+    });
 
     const main_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
@@ -34,14 +37,18 @@ fn addCoreExecutable(
     });
 
     if (target.result.os.tag == .windows) {
-        mod.linkSystemLibrary("kernel32", .{});
-        mod.linkSystemLibrary("advapi32", .{});
-        mod.linkSystemLibrary("shell32", .{});
-        mod.linkSystemLibrary("user32", .{});
-        exe.root_module.linkSystemLibrary("kernel32", .{});
-        exe.root_module.linkSystemLibrary("advapi32", .{});
-        exe.root_module.linkSystemLibrary("shell32", .{});
-        exe.root_module.linkSystemLibrary("user32", .{});
+        const win_libs = [_][]const u8{
+            "kernel32",
+            "advapi32",
+            "shell32",
+            "user32",
+            "ws2_32",
+            "crypt32",
+        };
+        for (win_libs) |lib| {
+            mod.linkSystemLibrary(lib, .{});
+            exe.root_module.linkSystemLibrary(lib, .{});
+        }
         if (optimize != .debug) {
             exe.subsystem = .windows;
         }
@@ -75,11 +82,16 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .link_libc = true,
     });
+    test_mod.addAnonymousImport("icon_png", .{
+        .root_source_file = b.path("assets/icon.png"),
+    });
     if (target.result.os.tag == .windows) {
         test_mod.linkSystemLibrary("kernel32", .{});
         test_mod.linkSystemLibrary("advapi32", .{});
         test_mod.linkSystemLibrary("shell32", .{});
         test_mod.linkSystemLibrary("user32", .{});
+        test_mod.linkSystemLibrary("ws2_32", .{});
+        test_mod.linkSystemLibrary("crypt32", .{});
     }
     const mod_tests = b.addTest(.{
         .root_module = test_mod,
@@ -121,7 +133,7 @@ pub fn build(b: *std.Build) void {
     attachWindowsIcon(b, installer_mod);
 
     const setup_exe = b.addExecutable(.{
-        .name = "EU5-RPC-Setup-v4.0.0-win64",
+        .name = "EU5-RPC-Setup-v4.1.0-win64",
         .root_module = installer_mod,
     });
     setup_exe.subsystem = .windows;
@@ -129,7 +141,7 @@ pub fn build(b: *std.Build) void {
     const install_setup = b.addInstallFileWithDir(
         setup_exe.getEmittedBin(),
         .{ .custom = "../dist" },
-        "EU5-RPC-Setup-v4.0.0-win64.exe",
+        "EU5-RPC-Setup-v4.1.0-win64.exe",
     );
     package_step.dependOn(&install_setup.step);
 

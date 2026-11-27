@@ -1,6 +1,6 @@
 .{
     .name = .eu5_rpc,
-    .version = "4.0.0",
+    .version = "4.1.0",
     .fingerprint = 0x4953fd66cb0d549c,
     .minimum_zig_version = "0.17.1",
     .dependencies = .{},

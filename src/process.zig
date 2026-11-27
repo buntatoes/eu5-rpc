@@ -5,8 +5,11 @@ const root = @import("root.zig");
 
 const win = if (builtin.os.tag == .windows) struct {
     const HANDLE = ?*anyopaque;
+    const HWND = ?*anyopaque;
     const INVALID_HANDLE_VALUE: HANDLE = @ptrFromInt(std.math.maxInt(usize));
     const TH32CS_SNAPPROCESS: u32 = 0x00000002;
+    const WM_CLOSE: u32 = 0x0010;
+    const PROCESS_TERMINATE: u32 = 0x0001;
 
     const PROCESSENTRY32 = extern struct {
         dwSize: u32,
@@ -21,15 +24,25 @@ const win = if (builtin.os.tag == .windows) struct {
         szExeFile: [260]u8,
     };
 
+    const EnumWindowsProc = *const fn (HWND, isize) callconv(.winapi) i32;
+
     extern "kernel32" fn CreateToolhelp32Snapshot(dwFlags: u32, th32ProcessID: u32) callconv(.winapi) HANDLE;
     extern "kernel32" fn Process32First(hSnapshot: HANDLE, lppe: *PROCESSENTRY32) callconv(.winapi) i32;
     extern "kernel32" fn Process32Next(hSnapshot: HANDLE, lppe: *PROCESSENTRY32) callconv(.winapi) i32;
     extern "kernel32" fn CloseHandle(hObject: HANDLE) callconv(.winapi) i32;
+    extern "kernel32" fn Sleep(dwMilliseconds: u32) callconv(.winapi) void;
+    extern "kernel32" fn OpenProcess(dwDesiredAccess: u32, bInheritHandle: i32, dwProcessId: u32) callconv(.winapi) HANDLE;
+    extern "kernel32" fn TerminateProcess(hProcess: HANDLE, uExitCode: u32) callconv(.winapi) i32;
+    extern "user32" fn EnumWindows(lpEnumFunc: EnumWindowsProc, lParam: isize) callconv(.winapi) i32;
+    extern "user32" fn GetWindowThreadProcessId(hWnd: HWND, lpdwProcessId: *u32) callconv(.winapi) u32;
+    extern "user32" fn PostMessageW(hWnd: HWND, Msg: u32, wParam: usize, lParam: isize) callconv(.winapi) i32;
 } else struct {};
 
 const posix = if (builtin.os.tag != .windows) struct {
     const DIR = anyopaque;
     const FILE = anyopaque;
+    const SIGTERM: c_int = 15;
+    const SIGKILL: c_int = 9;
     const Dirent = extern struct {
         d_ino: u64,
         d_off: i64,
@@ -43,10 +56,13 @@ const posix = if (builtin.os.tag != .windows) struct {
     extern "c" fn fopen(path: [*:0]const u8, mode: [*:0]const u8) ?*FILE;
     extern "c" fn fread(ptr: [*]u8, size: usize, nmemb: usize, stream: *FILE) usize;
     extern "c" fn fclose(stream: *FILE) c_int;
+    extern "c" fn getpid() c_int;
+    extern "c" fn kill(pid: c_int, sig: c_int) c_int;
+    extern "c" fn usleep(usec: u32) c_int;
 } else struct {};
 
 /// Native zero-subprocess, 100% VAC-safe & read-only process watcher.
-/// Windows: CreateToolhelp32Snapshot (never calls OpenProcess or ReadProcessMemory).
+/// Windows: CreateToolhelp32Snapshot (never calls ReadProcessMemory or injects code).
 /// Linux:   /proc/<pid>/comm and /proc/<pid>/cmdline scan (never opens /proc/<pid>/mem or calls ptrace).
 /// Supports native Linux, Steam Proton, Wine, GE-Proton, Steam Linux Runtime, Gamescope, GameMode, MangoHud, umu, and NixOS steam-run.
 fn basenameAny(path: []const u8) []const u8 {
@@ -212,29 +228,34 @@ pub fn cmdlineMatchesTarget(cmdline: []const u8, target_exe: []const u8) bool {
     return false;
 }
 
-pub fn processRunning(target_exe: []const u8) bool {
+pub fn collectMatchingPids(target_exe: []const u8, out_pids: []u32) usize {
+    var count: usize = 0;
     if (builtin.os.tag == .windows) {
         const snap = win.CreateToolhelp32Snapshot(win.TH32CS_SNAPPROCESS, 0);
-        if (snap == win.INVALID_HANDLE_VALUE) return false;
+        if (snap == win.INVALID_HANDLE_VALUE) return 0;
         defer _ = win.CloseHandle(snap);
 
         var entry = std.mem.zeroes(win.PROCESSENTRY32);
         entry.dwSize = @sizeOf(win.PROCESSENTRY32);
 
-        if (win.Process32First(snap, &entry) == 0) return false;
+        if (win.Process32First(snap, &entry) == 0) return 0;
         while (true) {
             const name_ptr: [*:0]const u8 = @ptrCast(&entry.szExeFile);
             const name = std.mem.span(name_ptr);
             if (std.ascii.eqlIgnoreCase(name, target_exe)) {
-                return true;
+                if (count < out_pids.len) {
+                    out_pids[count] = entry.th32ProcessID;
+                    count += 1;
+                }
             }
             if (win.Process32Next(snap, &entry) == 0) break;
         }
-        return false;
+        return count;
     } else {
-        const dir = posix.opendir("/proc") orelse return false;
+        const dir = posix.opendir("/proc") orelse return 0;
         defer _ = posix.closedir(dir);
 
+        const self_pid: u32 = @intCast(posix.getpid());
         const target_no_exe = if (std.mem.endsWith(u8, target_exe, ".exe"))
             target_exe[0 .. target_exe.len - 4]
         else
@@ -244,7 +265,10 @@ pub fn processRunning(target_exe: []const u8) bool {
             const dname_ptr: [*:0]const u8 = @ptrCast(&ent.d_name);
             const dname = std.mem.span(dname_ptr);
             if (dname.len == 0 or dname[0] < '0' or dname[0] > '9') continue;
+            const pid = std.fmt.parseInt(u32, dname, 10) catch continue;
+            if (pid == self_pid) continue;
 
+            var matched = false;
             var path_buf: [128]u8 = undefined;
             if (root.bufPrintZ(&path_buf, "/proc/{s}/comm", .{dname})) |comm_path| {
                 if (posix.fopen(comm_path.ptr, "rb")) |fp| {
@@ -254,29 +278,103 @@ pub fn processRunning(target_exe: []const u8) bool {
                     if (n > 0) {
                         const comm = std.mem.trim(u8, line_buf[0..n], " \t\r\n");
                         if (std.ascii.eqlIgnoreCase(comm, target_exe) or std.ascii.eqlIgnoreCase(comm, target_no_exe)) {
-                            return true;
+                            matched = true;
                         }
                     }
                 }
             } else |_| {}
 
-            if (root.bufPrintZ(&path_buf, "/proc/{s}/cmdline", .{dname})) |cmd_path| {
-                if (posix.fopen(cmd_path.ptr, "rb")) |fp| {
-                    defer _ = posix.fclose(fp);
-                    var cmd_buf: [4096]u8 = undefined;
-                    const n = posix.fread(&cmd_buf, 1, cmd_buf.len, fp);
-                    if (n > 0 and cmdlineMatchesTarget(cmd_buf[0..n], target_exe)) {
-                        return true;
+            if (!matched) {
+                if (root.bufPrintZ(&path_buf, "/proc/{s}/cmdline", .{dname})) |cmd_path| {
+                    if (posix.fopen(cmd_path.ptr, "rb")) |fp| {
+                        defer _ = posix.fclose(fp);
+                        var cmd_buf: [4096]u8 = undefined;
+                        const n = posix.fread(&cmd_buf, 1, cmd_buf.len, fp);
+                        if (n > 0 and cmdlineMatchesTarget(cmd_buf[0..n], target_exe)) {
+                            matched = true;
+                        }
                     }
-                }
-            } else |_| {}
+                } else |_| {}
+            }
+
+            if (matched and count < out_pids.len) {
+                out_pids[count] = pid;
+                count += 1;
+            }
         }
-        return false;
+        return count;
     }
+}
+
+pub fn processRunning(target_exe: []const u8) bool {
+    var pids: [1]u32 = undefined;
+    return collectMatchingPids(target_exe, &pids) > 0;
 }
 
 pub fn eu5Running() bool {
     return processRunning("eu5.exe");
+}
+
+const WinCloseCtx = struct {
+    pids: []const u32,
+};
+
+fn enumCloseWindowCb(hwnd: if (builtin.os.tag == .windows) win.HWND else ?*anyopaque, lparam: isize) callconv(.winapi) i32 {
+    if (builtin.os.tag != .windows) return 1;
+    const ctx: *const WinCloseCtx = @ptrFromInt(@as(usize, @bitCast(lparam)));
+    var wpid: u32 = 0;
+    _ = win.GetWindowThreadProcessId(hwnd, &wpid);
+    for (ctx.pids) |p| {
+        if (p == wpid) {
+            _ = win.PostMessageW(hwnd, win.WM_CLOSE, 0, 0);
+            break;
+        }
+    }
+    return 1;
+}
+
+/// Gracefully closes Europa Universalis V when the user explicitly selects Quit from the tray menu.
+/// Windows: posts standard WM_CLOSE to game windows first, falling back to minimal PROCESS_TERMINATE if unresponsive.
+/// Linux:   sends SIGTERM first to matching EU5/Proton PIDs, falling back to SIGKILL after 3 seconds if still running.
+pub fn closeEu5() void {
+    var pids: [32]u32 = undefined;
+    const n = collectMatchingPids("eu5.exe", &pids);
+    if (n == 0) return;
+
+    if (builtin.os.tag == .windows) {
+        var ctx = WinCloseCtx{ .pids = pids[0..n] };
+        _ = win.EnumWindows(enumCloseWindowCb, @as(isize, @bitCast(@intFromPtr(&ctx))));
+
+        var waited_ms: u32 = 0;
+        while (waited_ms < 3000) : (waited_ms += 100) {
+            if (!eu5Running()) return;
+            win.Sleep(100);
+        }
+
+        const rem = collectMatchingPids("eu5.exe", &pids);
+        for (pids[0..rem]) |pid| {
+            const h = win.OpenProcess(win.PROCESS_TERMINATE, 0, pid);
+            if (h != null) {
+                _ = win.TerminateProcess(h, 0);
+                _ = win.CloseHandle(h);
+            }
+        }
+    } else {
+        for (pids[0..n]) |pid| {
+            _ = posix.kill(@intCast(pid), posix.SIGTERM);
+        }
+
+        var waited_ms: u32 = 0;
+        while (waited_ms < 3000) : (waited_ms += 100) {
+            if (!eu5Running()) return;
+            _ = posix.usleep(100 * 1000);
+        }
+
+        const rem = collectMatchingPids("eu5.exe", &pids);
+        for (pids[0..rem]) |pid| {
+            _ = posix.kill(@intCast(pid), posix.SIGKILL);
+        }
+    }
 }
 
 test "native process enumeration reports non-existent process as false" {

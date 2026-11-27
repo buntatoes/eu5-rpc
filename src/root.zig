@@ -12,12 +12,15 @@ pub const process = @import("process.zig");
 pub const steam_rp = @import("steam_rp.zig");
 pub const log_watcher = @import("log_watcher.zig");
 pub const discord_ipc = @import("discord_ipc.zig");
+pub const updater = @import("updater.zig");
+pub const tray = @import("tray.zig");
 
-pub const VERSION = "4.0.0";
+pub const VERSION = "4.1.0";
 // Official public Discord detectable-application ID for Europa Universalis V (not user-specific).
 pub const DEFAULT_DISCORD_APP_ID = "1435327845051400292";
 pub const EU5_STEAM_APP_ID = "3450310";
 pub const DEFAULT_LARGE_IMAGE_URL = "https://raw.githubusercontent.com/buntatoes/eu5-rpc/main/assets/icon.png";
+pub const GITHUB_RELEASES_LATEST_URL = "https://github.com/buntatoes/eu5-rpc/releases/latest";
 
 pub fn bufPrintZ(buf: []u8, comptime fmt: []const u8, args: anytype) error{NoSpaceLeft}![:0]u8 {
     if (buf.len == 0) return error.NoSpaceLeft;
@@ -38,4 +41,6 @@ test {
     _ = steam_rp;
     _ = log_watcher;
     _ = discord_ipc;
+    _ = updater;
+    _ = tray;
 }

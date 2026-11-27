@@ -16,7 +16,8 @@ pub const DEFAULT_TOML =
     \\# Leave blank to automatically link with Discord's built-in Europa Universalis V application.
     \\discord_app_id = ""
     \\launch_game_on_start = true
-    \\exit_when_game_closes = true
+    \\exit_when_game_closes = false
+    \\auto_update = true
     \\poll_interval_ms = 1000
     \\discord_update_interval_s = 5
     \\# Override Paradox user data folder if auto-detection fails.
@@ -80,7 +81,8 @@ pub fn FixedStr(comptime cap: usize) type {
 pub const GeneralConfig = struct {
     discord_app_id: FixedStr(64) = .{},
     launch_game_on_start: bool = true,
-    exit_when_game_closes: bool = true,
+    exit_when_game_closes: bool = false,
+    auto_update: bool = true,
     poll_interval_ms: u32 = 1000,
     discord_update_interval_s: u32 = 5,
     user_data_folder: FixedStr(512) = .{},
@@ -134,6 +136,7 @@ pub const Config = struct {
         }
         if (doc.getBool("general", "launch_game_on_start")) |v| cfg.general.launch_game_on_start = v;
         if (doc.getBool("general", "exit_when_game_closes")) |v| cfg.general.exit_when_game_closes = v;
+        if (doc.getBool("general", "auto_update")) |v| cfg.general.auto_update = v;
         if (doc.getInt("general", "poll_interval_ms")) |v| {
             if (v > 0 and v <= 60_000) cfg.general.poll_interval_ms = @intCast(v);
         }
@@ -301,7 +304,8 @@ test "default TOML parses to expected EU5 RPC defaults" {
 
     const cfg = Config.fromToml(&doc);
     try std.testing.expectEqual(true, cfg.general.launch_game_on_start);
-    try std.testing.expectEqual(true, cfg.general.exit_when_game_closes);
+    try std.testing.expectEqual(false, cfg.general.exit_when_game_closes);
+    try std.testing.expectEqual(true, cfg.general.auto_update);
     try std.testing.expectEqual(@as(u32, 1000), cfg.general.poll_interval_ms);
     try std.testing.expectEqual(@as(u32, 5), cfg.general.discord_update_interval_s);
     try std.testing.expectEqualStrings(root.DEFAULT_DISCORD_APP_ID, cfg.general.effectiveAppId());

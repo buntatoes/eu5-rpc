@@ -37,7 +37,6 @@ const posix = if (builtin.os.tag != .windows) struct {
     const SIGPIPE: c_int = 13;
     const SIGTERM: c_int = 15;
     const SIG_IGN: usize = 1;
-    const SigHandler = *const fn (c_int) callconv(.c) void;
     extern "c" fn signal(sig: c_int, handler: usize) usize;
     extern "c" fn getenv(name: [*:0]const u8) ?[*:0]const u8;
     extern "c" fn getuid() u32;
@@ -45,7 +44,6 @@ const posix = if (builtin.os.tag != .windows) struct {
     extern "c" fn open(pathname: [*:0]const u8, flags: c_int, ...) c_int;
     extern "c" fn fcntl(fd: c_int, cmd: c_int, ...) c_int;
     extern "c" fn close(fd: c_int) c_int;
-    extern "c" fn mkdir(pathname: [*:0]const u8, mode: u32) c_int;
     extern "c" fn chmod(pathname: [*:0]const u8, mode: u32) c_int;
     extern "c" fn unlink(pathname: [*:0]const u8) c_int;
     extern "c" fn rmdir(pathname: [*:0]const u8) c_int;
@@ -62,21 +60,30 @@ const posix = if (builtin.os.tag != .windows) struct {
 } else struct {};
 
 var g_stop = std.atomic.Value(bool).init(false);
+var g_update_in_progress = std.atomic.Value(bool).init(false);
 
 fn handleStopSignal(_: c_int) callconv(.c) void {
     g_stop.store(true, .release);
 }
 
-fn sleepMs(ms: u32) void {
-    if (builtin.os.tag == .windows) {
-        win.Sleep(ms);
-    } else {
-        var remaining: u32 = ms;
-        while (remaining > 0 and !g_stop.load(.acquire)) {
-            const step: u32 = @min(remaining, 100);
-            _ = posix.usleep(step * 1000);
-            remaining -= step;
+fn sleepMs(ms: u32, tray: *eu5.tray.Tray) void {
+    var remaining: u32 = ms;
+    while (remaining > 0 and !g_stop.load(.acquire)) {
+        // Wake promptly if the user clicked an item in the tray menu
+        if (tray.quit_requested.load(.acquire) or
+            tray.launch_requested.load(.acquire) or
+            tray.check_update_requested.load(.acquire) or
+            tray.open_config_requested.load(.acquire))
+        {
+            return;
         }
+        const step: u32 = @min(remaining, 100);
+        if (builtin.os.tag == .windows) {
+            win.Sleep(step);
+        } else {
+            _ = posix.usleep(step * 1000);
+        }
+        remaining -= step;
     }
 }
 
@@ -90,7 +97,6 @@ fn acquireSingleInstance() bool {
         }
         return true;
     } else {
-        // Per-user lock file (user- and distro-agnostic across multi-user Linux systems)
         var lock_buf: [256]u8 = undefined;
         const lock_path = blk: {
             if (posix.getenv("XDG_RUNTIME_DIR")) |rt_ptr| {
@@ -112,11 +118,6 @@ fn acquireSingleInstance() bool {
         }
         return true;
     }
-}
-
-fn mkdirParentsLinux(path: []const u8) void {
-    if (builtin.os.tag == .windows) return;
-    eu5.eu5_files.ensureDirRecursive(path);
 }
 
 fn writeFileLinux(path_z: [*:0]const u8, data: []const u8) bool {
@@ -195,10 +196,13 @@ fn installLinux() void {
     const desktop_dir = eu5.bufPrintZ(&desktop_dir_buf, "{s}/applications", .{share_dir}) catch return;
     const icon_dir = eu5.bufPrintZ(&icon_dir_buf, "{s}/icons/hicolor/256x256/apps", .{share_dir}) catch return;
 
-    mkdirParentsLinux(app_dir);
-    mkdirParentsLinux(bin_dir);
-    mkdirParentsLinux(desktop_dir);
-    mkdirParentsLinux(icon_dir);
+    eu5.eu5_files.ensureDirRecursive(app_dir);
+    eu5.eu5_files.ensureDirRecursive(bin_dir);
+    eu5.eu5_files.ensureDirRecursive(desktop_dir);
+    eu5.eu5_files.ensureDirRecursive(icon_dir);
+
+    // Clean up legacy Ruby installation folders on upgrade
+    eu5.updater.cleanupLegacyRubyLinux(app_dir);
 
     var self_buf: [512]u8 = undefined;
     const self_len = posix.readlink("/proc/self/exe", &self_buf, self_buf.len - 1);
@@ -262,7 +266,6 @@ fn installLinux() void {
         ) catch return;
     _ = writeFileLinux(desktop_dst.ptr, desktop_content);
 
-    // Best-effort refresh for KDE Plasma, GNOME, XFCE, and other XDG desktop environments
     const upd_db = [_:null]?[*:0]const u8{ "update-desktop-database", desktop_dir.ptr };
     runQuietHelperLinux(&upd_db);
 
@@ -300,13 +303,81 @@ fn uninstallLinux() void {
     if (eu5.bufPrintZ(&p_buf, "{s}/applications/eu5-rpc.desktop", .{share_dir})) |p| _ = posix.unlink(p.ptr) else |_| {}
     if (eu5.bufPrintZ(&p_buf, "{s}/icons/hicolor/256x256/apps/eu5-rpc.png", .{share_dir})) |p| _ = posix.unlink(p.ptr) else |_| {}
     if (eu5.bufPrintZ(&p_buf, "{s}/eu5-rpc/eu5-rpc", .{share_dir})) |p| _ = posix.unlink(p.ptr) else |_| {}
-    if (eu5.bufPrintZ(&p_buf, "{s}/eu5-rpc", .{share_dir})) |p| _ = posix.rmdir(p.ptr) else |_| {}
+    if (eu5.bufPrintZ(&p_buf, "{s}/eu5-rpc", .{share_dir})) |p| {
+        eu5.updater.cleanupLegacyRubyLinux(p);
+        _ = posix.rmdir(p.ptr);
+    } else |_| {}
     _ = printf("Uninstalled EU5 RPC.\n");
+}
+
+const UpdateTaskArgs = struct {
+    alloc: std.mem.Allocator,
+    io: std.Io,
+    tray: *eu5.tray.Tray,
+    notify_up_to_date: bool,
+};
+
+fn runBackgroundUpdateCheck(args: UpdateTaskArgs) void {
+    defer g_update_in_progress.store(false, .release);
+
+    const res = eu5.updater.checkForUpdate(args.alloc, args.io);
+    switch (res.status) {
+        .update_available, .migrating_from_ruby => {
+            if (res.release) |rel| {
+                var msg_buf: [200]u8 = undefined;
+                const msg = if (res.legacy_ruby_detected)
+                    std.fmt.bufPrint(&msg_buf, "Migrating legacy Ruby install to Zig {s}...", .{rel.tagName()}) catch "Updating EU5 RPC..."
+                else
+                    std.fmt.bufPrint(&msg_buf, "Updating EU5 RPC to {s}...", .{rel.tagName()}) catch "Updating EU5 RPC...";
+                args.tray.notify("EU5 RPC Update", msg);
+
+                if (eu5.updater.applyUpdate(args.alloc, args.io, &rel)) {
+                    g_stop.store(true, .release);
+                } else {
+                    var fail_buf: [220]u8 = undefined;
+                    const fail_msg = std.fmt.bufPrint(&fail_buf, "Update {s} available at {s}", .{
+                        rel.tagName(),
+                        eu5.GITHUB_RELEASES_LATEST_URL,
+                    }) catch "Update available on GitHub Releases";
+                    args.tray.notify("EU5 RPC Update", fail_msg);
+                }
+            }
+        },
+        .up_to_date => {
+            if (args.notify_up_to_date) {
+                var msg_buf: [128]u8 = undefined;
+                const msg = std.fmt.bufPrint(&msg_buf, "EU5 RPC v{s} is up to date.", .{eu5.VERSION}) catch "EU5 RPC is up to date.";
+                args.tray.notify("EU5 RPC", msg);
+            }
+        },
+        .check_failed => {
+            if (args.notify_up_to_date) {
+                args.tray.notify("EU5 RPC Update", "Could not reach GitHub Releases. Try again later.");
+            }
+        },
+        else => {},
+    }
+}
+
+fn triggerBackgroundUpdate(alloc: std.mem.Allocator, io: std.Io, tray: *eu5.tray.Tray, notify_up_to_date: bool) void {
+    if (g_update_in_progress.swap(true, .acq_rel)) return;
+    if (std.Thread.spawn(.{}, runBackgroundUpdateCheck, .{UpdateTaskArgs{
+        .alloc = alloc,
+        .io = io,
+        .tray = tray,
+        .notify_up_to_date = notify_up_to_date,
+    }})) |th| {
+        th.detach();
+    } else |_| {
+        g_update_in_progress.store(false, .release);
+    }
 }
 
 pub fn main(init: std.process.Init) !void {
     const arena = init.arena.allocator();
     const args = try init.minimal.args.toSlice(arena);
+
+    eu5.updater.cleanupOldBinary();
 
     var split_idx: usize = args.len;
     for (args[1..], 1..) |arg, idx| {
@@ -323,6 +394,10 @@ pub fn main(init: std.process.Init) !void {
     var run_once = false;
     var launch_with_command = false;
     var generate_config = false;
+    var check_update_only = false;
+    var apply_update_now = false;
+    var no_update = false;
+    var no_tray = false;
 
     for (flags) |arg| {
         if (std.mem.eql(u8, arg, "--version") or std.mem.eql(u8, arg, "-v")) {
@@ -335,6 +410,10 @@ pub fn main(init: std.process.Init) !void {
                     "Options:\n" ++
                     "  --no-launch                    Skip launching EU5 via Steam on startup\n" ++
                     "  --keep-open                    Keep running after EU5 closes\n" ++
+                    "  --no-tray                      Run without the persistent system tray icon\n" ++
+                    "  --no-update                    Skip automatic GitHub update check on startup\n" ++
+                    "  --check-update                 Check GitHub for a newer release (or Ruby migration) and exit\n" ++
+                    "  --update                       Download and install the latest Zig release from GitHub\n" ++
                     "  --once                         Probe EU5 telemetry once, print status, and exit\n" ++
                     "  --launch-with-command -- <cmd> Launch custom command (for Steam %%command%%)\n" ++
                     "  --generate-config              Write default config.toml and exit\n" ++
@@ -357,12 +436,51 @@ pub fn main(init: std.process.Init) !void {
             no_launch = true;
         } else if (std.mem.eql(u8, arg, "--keep-open")) {
             keep_open = true;
+        } else if (std.mem.eql(u8, arg, "--no-tray")) {
+            no_tray = true;
+        } else if (std.mem.eql(u8, arg, "--no-update")) {
+            no_update = true;
+        } else if (std.mem.eql(u8, arg, "--check-update")) {
+            check_update_only = true;
+        } else if (std.mem.eql(u8, arg, "--update")) {
+            apply_update_now = true;
         } else if (std.mem.eql(u8, arg, "--once")) {
             run_once = true;
             no_launch = true;
         } else if (std.mem.eql(u8, arg, "--launch-with-command")) {
             launch_with_command = true;
         }
+    }
+
+    if (check_update_only or apply_update_now) {
+        const res = eu5.updater.checkForUpdate(init.gpa, init.io);
+        switch (res.status) {
+            .up_to_date => {
+                _ = printf("EU5 RPC v%s is up to date.\n", eu5.VERSION.ptr);
+            },
+            .update_available, .migrating_from_ruby => {
+                const rel = res.release.?;
+                var tag_z: [65]u8 = undefined;
+                @memcpy(tag_z[0..rel.tag_len], rel.tagName());
+                tag_z[rel.tag_len] = 0;
+                if (res.legacy_ruby_detected) {
+                    _ = printf("Legacy Ruby install detected. Latest Zig release: %s (%s)\n", &tag_z, eu5.GITHUB_RELEASES_LATEST_URL);
+                } else {
+                    _ = printf("Update available: %s -> %s (%s)\n", eu5.VERSION.ptr, &tag_z, eu5.GITHUB_RELEASES_LATEST_URL);
+                }
+                if (apply_update_now) {
+                    if (eu5.updater.applyUpdate(init.gpa, init.io, &rel)) {
+                        _ = printf("Updated to %s successfully.\n", &tag_z);
+                    } else {
+                        _ = printf("Automatic update failed. Download manually from %s\n", eu5.GITHUB_RELEASES_LATEST_URL);
+                    }
+                }
+            },
+            else => {
+                _ = printf("Failed to check GitHub Releases (%s).\n", eu5.GITHUB_RELEASES_LATEST_URL);
+            },
+        }
+        return;
     }
 
     var data_dir_buf: [512]u8 = undefined;
@@ -443,18 +561,29 @@ pub fn main(init: std.process.Init) !void {
         return;
     }
 
+    if (builtin.os.tag != .windows) {
+        _ = posix.signal(posix.SIGINT, @intFromPtr(&handleStopSignal));
+        _ = posix.signal(posix.SIGTERM, @intFromPtr(&handleStopSignal));
+        _ = posix.signal(posix.SIGPIPE, posix.SIG_IGN);
+    }
+
+    // Start persistent system tray icon
+    var tray = eu5.tray.Tray.init();
+    if (!no_tray) {
+        tray.start();
+    }
+    defer tray.stopAndJoin();
+
+    // Non-blocking startup auto-update & legacy Ruby -> Zig migration check
+    if (cfg.general.auto_update and !no_update) {
+        triggerBackgroundUpdate(init.gpa, init.io, &tray, false);
+    }
+
     if (launch_with_command and game_command.len > 0) {
         eu5.eu5_files.spawnCustomCommand(arena, game_command, false);
     } else if (!no_launch and cfg.general.launch_game_on_start and !eu5.process.eu5Running()) {
         log.info("[launcher] Launching Europa Universalis V via Steam (AppID {s})...", .{eu5.EU5_STEAM_APP_ID});
         eu5.eu5_files.launchEu5ViaSteam();
-    }
-
-    if (builtin.os.tag != .windows) {
-        _ = posix.signal(posix.SIGINT, @intFromPtr(&handleStopSignal));
-        _ = posix.signal(posix.SIGTERM, @intFromPtr(&handleStopSignal));
-        // Ignore SIGPIPE so restarting Discord never terminates the daemon on Linux
-        _ = posix.signal(posix.SIGPIPE, posix.SIG_IGN);
     }
 
     var user_dir_buf: [768]u8 = undefined;
@@ -490,6 +619,31 @@ pub fn main(init: std.process.Init) !void {
     var has_pushed = false;
 
     while (!g_stop.load(.acquire)) {
+        // Handle persistent tray actions immediately
+        switch (tray.pollAction()) {
+            .none => {},
+            .launch_game => {
+                if (!eu5.process.eu5Running()) {
+                    log.info("[tray] Launching Europa Universalis V via Steam...", .{});
+                    eu5.eu5_files.launchEu5ViaSteam();
+                }
+            },
+            .check_update => {
+                log.info("[tray] Checking GitHub Releases for updates...", .{});
+                triggerBackgroundUpdate(init.gpa, init.io, &tray, true);
+            },
+            .open_config => {
+                eu5.tray.openConfigFolder(data_dir);
+            },
+            .quit_all => {
+                log.info("[tray] Quit selected - closing Europa Universalis V and EU5 RPC...", .{});
+                steam_rp.disconnect();
+                if (discord.connected) discord.clearActivity();
+                eu5.process.closeEu5();
+                return;
+            },
+        }
+
         const now = time(null);
         const running = eu5.process.eu5Running();
 
@@ -520,13 +674,21 @@ pub fn main(init: std.process.Init) !void {
 
             watcher.step(std.heap.page_allocator, &state, &lookup, steam_has_country);
         } else if (game_was_running) {
-            log.info("[process] Europa Universalis V exited - resetting state", .{});
+            log.info("[process] Europa Universalis V exited - clearing Discord presence", .{});
             steam_rp.disconnect();
             state.reset();
             discord.clearActivity();
             has_pushed = false;
-            if (cfg.general.exit_when_game_closes and !keep_open) return;
             game_was_running = false;
+            if (cfg.general.exit_when_game_closes and !keep_open) return;
+        }
+
+        // Keep tray tooltip & status header synced with current game state
+        {
+            var td_buf: [256]u8 = undefined;
+            var ts_buf: [256]u8 = undefined;
+            const tpres = state.formatPresence(&cfg.presence, &td_buf, &ts_buf);
+            tray.updateStatus(if (running) tpres.details else "Waiting for Europa Universalis V", running);
         }
 
         if (!discord.connected and (last_discord_attempt == 0 or now - last_discord_attempt >= 10)) {
@@ -537,7 +699,7 @@ pub fn main(init: std.process.Init) !void {
             }
         }
 
-        if (discord.connected and (!has_pushed or now - last_discord_push >= discord_interval_s)) {
+        if (discord.connected and running and (!has_pushed or now - last_discord_push >= discord_interval_s)) {
             var d_buf: [256]u8 = undefined;
             var s_buf: [256]u8 = undefined;
             const pres = state.formatPresence(&cfg.presence, &d_buf, &s_buf);
@@ -569,7 +731,7 @@ pub fn main(init: std.process.Init) !void {
             }
         }
 
-        sleepMs(poll_ms);
+        sleepMs(poll_ms, &tray);
     }
 
     if (discord.connected) {
