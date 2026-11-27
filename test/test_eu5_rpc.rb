@@ -135,4 +135,40 @@ class TestEu5Rpc < Minitest::Test
       assert_equal "Playing as Portugal (1337)", details
     end
   end
+
+  def test_steam_rich_presence_dynamic_country_swap
+    state = Eu5Rpc::GameState.new
+    state.game_version = "1.4.9"
+    cfg = Eu5Rpc::Config.new
+
+    # Start playing as Kyiv
+    rp1 = Eu5Rpc::SteamRichPresence.parse_presence_hash(
+      "steam_display" => "#playing",
+      "COUNTRY" => "Kyiv",
+      "YEAR" => "1337",
+      "STATUS" => "Ruling the realm"
+    )
+    state.apply_steam_rich_presence(rp1)
+    details1, status1 = state.format_presence(cfg.presence)
+    assert_equal "Playing as Kyiv (1337)", details1
+    assert_equal "Ruling the realm · Singleplayer · v1.4.9", status1
+
+    # Dynamically swap countries mid-game to Byzantium at war
+    rp2 = Eu5Rpc::SteamRichPresence.parse_presence_hash(
+      "steam_display" => "#playing",
+      "COUNTRY" => "Byzantium",
+      "YEAR" => "1340",
+      "STATUS" => "At war against Ottomans"
+    )
+    state.apply_steam_rich_presence(rp2)
+    details2, status2 = state.format_presence(cfg.presence)
+    assert_equal "Playing as Byzantium (1340)", details2
+    assert_equal "At war against Ottomans · Singleplayer · v1.4.9", status2
+
+    # Return to main menu clears country
+    rp3 = Eu5Rpc::SteamRichPresence.parse_presence_hash("steam_display" => "#main_menu")
+    state.apply_steam_rich_presence(rp3)
+    assert_equal Eu5Rpc::GamePhase::MAIN_MENU, state.phase
+    assert_nil state.country_name
+  end
 end

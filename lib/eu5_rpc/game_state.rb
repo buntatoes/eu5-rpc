@@ -8,6 +8,7 @@ module Eu5Rpc
     NOT_RUNNING = :not_running
     LOADING     = :loading
     MAIN_MENU   = :main_menu
+    LOBBY       = :lobby
     IN_GAME     = :in_game
   end
 
@@ -63,11 +64,45 @@ module Eu5Rpc
 
     def enter_main_menu
       @phase = GamePhase::MAIN_MENU
+      @country_name = nil
+      @country_tag = nil
+      @year = nil
+      @date_str = nil
+      @active_event = nil
+    end
+
+    def enter_lobby
+      @phase = GamePhase::LOBBY
       @active_event = nil
     end
 
     def enter_game
       @phase = GamePhase::IN_GAME
+    end
+
+    def apply_steam_rich_presence(rp)
+      return unless rp.is_a?(Hash)
+
+      @phase = rp[:phase] if rp[:phase]
+      @multiplayer = rp[:multiplayer] unless rp[:multiplayer].nil?
+      @observer = rp[:observer] unless rp[:observer].nil?
+
+      if @phase == GamePhase::MAIN_MENU
+        @country_name = nil
+        @country_tag = nil
+        @year = nil
+        @active_event = nil
+        return
+      end
+
+      if rp[:country] && !rp[:country].empty?
+        if @country_name != rp[:country]
+          @country_name = rp[:country]
+          @country_tag = nil
+        end
+      end
+      @year = rp[:year] if rp[:year]
+      @active_event = rp[:status] if rp[:status] && !rp[:status].empty?
     end
 
     def mode_label
@@ -96,6 +131,13 @@ module Eu5Rpc
         [status_cfg.loading, version_suffix(pres_cfg)]
       when GamePhase::MAIN_MENU
         [status_cfg.in_main_menu, version_suffix(pres_cfg)]
+      when GamePhase::LOBBY
+        lobby_detail = if @country_name && !@country_name.empty?
+                         "Choosing Country: #{@country_name}"
+                       else
+                         "In Country Selection Lobby"
+                       end
+        [lobby_detail, [mode_label, version_suffix(pres_cfg)].compact.join(" · ")]
       when GamePhase::IN_GAME
         vars = {
           country: @country_name.to_s,

@@ -8,13 +8,14 @@ require_relative "eu5_rpc/config"
 require_relative "eu5_rpc/game_state"
 require_relative "eu5_rpc/country_lookup"
 require_relative "eu5_rpc/save_inspector"
+require_relative "eu5_rpc/steam_rich_presence"
 require_relative "eu5_rpc/log_watcher"
 require_relative "eu5_rpc/discord_ipc"
 require_relative "eu5_rpc/process_watcher"
 require_relative "eu5_rpc/steam"
 
 module Eu5Rpc
-  VERSION = "0.2.1"
+  VERSION = "0.3.0"
   # Official public Discord detectable-application ID for Europa Universalis V (not user-specific).
   DEFAULT_DISCORD_APP_ID = "1435327845051400292"
   SINGLE_INSTANCE_PORT = 47_785
@@ -77,10 +78,11 @@ module Eu5Rpc
       user_data_dir = Steam.find_user_data_dir(cfg.general.user_data_folder)
       game_install_dir = Steam.find_game_install_dir
       country_lookup = CountryLookup.new(game_install_dir)
+      steam_rp = SteamRichPresence.new
       state = GameState.new
       mutex = Mutex.new
 
-      Thread.new { LogWatcher.new(user_data_dir, cfg.general.poll_interval_ms, country_lookup).run(state, mutex) }
+      Thread.new { LogWatcher.new(user_data_dir, cfg.general.poll_interval_ms, country_lookup, steam_rp).run(state, mutex) }
       Thread.new { ProcessWatcher.run(state, mutex) }
 
       run_rpc_loop(state, mutex, cfg)

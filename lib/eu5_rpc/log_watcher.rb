@@ -124,12 +124,14 @@ module Eu5Rpc
       end
     end
 
-    def initialize(user_data_dir, poll_interval_ms, country_lookup = nil)
+    def initialize(user_data_dir, poll_interval_ms, country_lookup = nil, steam_rp = nil)
       @user_data_dir = user_data_dir.to_s.tr("\\", "/")
       @poll_interval_s = [poll_interval_ms.to_f / 1000.0, 0.25].max
       @country_lookup = country_lookup || CountryLookup.new
+      @steam_rp = steam_rp
       @offsets = {}
       @last_save_key = nil
+      @session_started_at = Time.now.to_f
     end
 
     def run(state, mutex)
@@ -138,11 +140,23 @@ module Eu5Rpc
       game_log  = File.join(logs_dir, "game.log")
       mp_log    = File.join(logs_dir, "multiplayer.log")
 
+      # Ignore stale log contents written by previous sessions before eu5-rpc started.
+      [debug_log, game_log, mp_log].each do |p|
+        if File.file?(p) && File.mtime(p).to_f < (@session_started_at - 3.0)
+          @offsets[p] = File.size(p) rescue 0
+        end
+      end
+
       loop do
+        steam_rp_data = @steam_rp&.poll
+        if steam_rp_data
+          mutex.synchronize { state.apply_steam_rich_presence(steam_rp_data) }
+        end
+
         tail_log(debug_log, state, mutex) { |line, gs| self.class.process_debug_line(line, gs) }
         tail_log(mp_log, state, mutex)    { |line, gs| self.class.process_multiplayer_line(line, gs, @country_lookup) }
         tail_log(game_log, state, mutex)  { |line, gs| self.class.process_game_line(line, gs) }
-        refresh_save_metadata(state, mutex)
+        refresh_save_metadata(state, mutex) unless steam_rp_data && steam_rp_data[:country]
         sleep(@poll_interval_s)
       end
     end
@@ -155,28 +169,28 @@ module Eu5Rpc
       continue_path = File.join(@user_data_dir, "continue_game.json")
       save_mtime = newest ? (File.mtime(newest).to_f rescue nil) : nil
       cont_mtime = File.file?(continue_path) ? (File.mtime(continue_path).to_f rescue nil) : nil
-      current_key = [newest, save_mtime, cont_mtime]
 
-      needs_country = mutex.synchronize { state.country_name.nil? }
-      return if !needs_country && @last_save_key == current_key
+      # Only read saves written or updated during the CURRENT session so old saves from
+      # prior days/campaigns never overwrite a newly selected country.
+      active_mtime = [save_mtime, cont_mtime].compact.max
+      return if active_mtime.nil? || active_mtime < (@session_started_at - 5.0)
+
+      current_key = [newest, save_mtime, cont_mtime]
+      return if @last_save_key == current_key
 
       meta = SaveInspector.inspect_user_data_dir(@user_data_dir)
       return unless meta
 
       @last_save_key = current_key
       mutex.synchronize do
-        # Only populate country from saves if live multiplayer.log hasn't set one yet,
-        # or if a brand-new save was written for the current tag (updating localized/formable name).
-        if state.country_tag.nil? || (meta.country_tag && meta.country_tag.casecmp(state.country_tag).zero?)
-          state.country_tag = meta.country_tag if meta.country_tag && !meta.country_tag.empty?
-          if meta.country_name && !meta.country_name.empty?
-            state.country_name = meta.country_name
-          elsif state.country_name.nil? && state.country_tag
-            state.country_name = @country_lookup.resolve(state.country_tag)
-          end
+        state.country_tag = meta.country_tag if meta.country_tag && !meta.country_tag.empty?
+        if meta.country_name && !meta.country_name.empty?
+          state.country_name = meta.country_name
+        elsif state.country_tag
+          state.country_name = @country_lookup.resolve(state.country_tag)
         end
 
-        if meta.year && (state.year.nil? || (meta.country_tag == state.country_tag && meta.year >= state.year))
+        if meta.year && (state.year.nil? || meta.year >= state.year)
           state.year = meta.year
           state.date_str = meta.date_str
         end
