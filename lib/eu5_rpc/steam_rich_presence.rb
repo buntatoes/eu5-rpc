@@ -40,10 +40,69 @@ module Eu5Rpc
     VT_FRIENDS_GET_RP_KEY_AT    = 47
     VT_FRIENDS_REQUEST_RP       = 48
 
-    # Matches EU5's localized RICH_PRESENCE_PLAYING / RICH_PRESENCE_PLAYING_MP format:
-    # "<STATUS> as <COUNTRY>, <YEAR>" or "<STATUS> as <COUNTRY>, <YEAR> (Multiplayer)"
-    PLAYING_RE  = /\A(.+?)\s+as\s+(.+?),\s+(\d{3,4})(?:\s+\(Multiplayer\))?\z/i.freeze
-    OBSERVER_RE = /\A(.+?),\s+(\d{3,4})(?:\s+\(Multiplayer\))?\z/i.freeze
+    # Official EU5 localized Rich Presence strings across all 11 supported languages:
+    # English, Brazilian Portuguese, French, German, Japanese, Korean, Polish,
+    # Russian, Simplified Chinese, Spanish, and Turkish.
+    MAIN_MENU_STRINGS = [
+      "in main menu",
+      "no menu principal",
+      "dans le menu principal",
+      "im hauptmenü",
+      "メインメニュー",
+      "메인 메뉴",
+      "w menu głównym",
+      "в главном меню",
+      "位于主菜单",
+      "en el menú principal",
+      "ana menüde"
+    ].freeze
+
+    LOBBY_STRINGS = [
+      "in lobby",
+      "no lobby",
+      "dans le salon",
+      "in der lobby",
+      "ロビー",
+      "로비",
+      "w lobby",
+      "в лобби",
+      "位于多人游戏大厅",
+      "en sala",
+      "lobide"
+    ].freeze
+
+    MULTIPLAYER_TAG_RE = /(?:\s*[\(（](?:multiplayer|multijogador|multijoueur|mehrspieler|マルチプレイ|멀티플레이어|gra wieloosobowa|многопользовательская игра|多人游戏|multijugador|çok oyunculu)[\)）])\z/i.freeze
+
+    OBSERVER_KEYWORDS = [
+      "observing",
+      "observando",
+      "observe ",
+      "beobachtet",
+      "観測中",
+      "관전 중",
+      "obserwuje",
+      "наблюдает",
+      "观察世界",
+      "izliyor"
+    ].freeze
+
+    # "<STATUS> <connector> <COUNTRY>, <YEAR>" (EN, PT-BR, FR, DE, PL, ES)
+    STATUS_THEN_COUNTRY_RE = /\A(.+?)\s+(?:en tant que|as|como|als|jako)\s+(.+?),\s*(\d{3,4})\z/i.freeze
+    # Russian: "<STATUS> за державу <COUNTRY>, <YEAR> год"
+    RUSSIAN_PLAYING_RE     = /\A(.+?)\s+за\s+державу\s+(.+?),\s*(\d{3,4})[\s\u00A0]*год\z/i.freeze
+    # Turkish: "<COUNTRY> olarak <STATUS>, <YEAR>"
+    TURKISH_PLAYING_RE     = /\A(.+?)\s+olarak\s+(.+?),\s*(\d{3,4})\z/i.freeze
+    # Japanese: "<COUNTRY>として<STATUS>、<YEAR>"
+    JAPANESE_PLAYING_RE    = /\A(.+?)として(.+?)[、,]\s*(\d{3,4})\z/.freeze
+    # Korean: "<YEAR>, <COUNTRY>(으)로 <STATUS>" (or "<COUNTRY>으로/로 <STATUS>")
+    KOREAN_PLAYING_RE      = /\A(\d{3,4}),\s*(.+?)(?:\(으\)로|으로|로)\s+(.+)\z/.freeze
+    # Simplified Chinese: "作为<COUNTRY><STATUS>，<YEAR>年"
+    CHINESE_PLAYING_RE     = /\A作为(.+?)[，,]\s*(\d{3,4})年\z/.freeze
+    CHINESE_STATUS_RE      = /\A(.+?)(破产|经历.+|输掉对抗.+|赢得对抗.+|与.+交战|处于摄政时期|时代霸主|领导.+|殖民新土地|统治国家|[^\s]+患有.+|[^\s]+隶属于.+)\z/.freeze
+
+    # Observer formats across all 11 languages
+    OBSERVER_TAIL_YEAR_RE  = /\A(.+?)[,、，]\s*(\d{3,4})(?:[\s\u00A0]*год|年)?\z/i.freeze
+    OBSERVER_HEAD_YEAR_RE  = /\A(\d{3,4}),\s*(.+)\z/.freeze
 
     def self.parse_presence_hash(raw_map)
       return nil unless raw_map.is_a?(Hash) && !raw_map.empty?
@@ -55,32 +114,52 @@ module Eu5Rpc
       status_raw = norm["status"].to_s
       text = !status_raw.empty? ? status_raw : display
 
-      # 1. Check formatted EU5 localized Rich Presence string first (actual live format)
+      # 1. Check formatted EU5 localized Rich Presence string across all 11 languages
       if !text.empty? && !text.start_with?("#")
-        mp = text.include?("(Multiplayer)")
-        lower = text.downcase
+        mp = MULTIPLAYER_TAG_RE.match?(text)
+        core = text.sub(MULTIPLAYER_TAG_RE, "").strip
+        lower = core.downcase
 
-        if lower == "in main menu"
+        if MAIN_MENU_STRINGS.include?(lower)
           return { phase: GamePhase::MAIN_MENU, country: nil, year: nil, status: nil, multiplayer: false, observer: false }
-        elsif lower == "in lobby"
+        elsif LOBBY_STRINGS.include?(lower)
           return { phase: GamePhase::LOBBY, country: nil, year: nil, status: nil, multiplayer: mp, observer: false }
-        elsif (m = PLAYING_RE.match(text))
+        elsif (m = RUSSIAN_PLAYING_RE.match(core))
+          return playing_result(m[2], m[3], m[1], mp)
+        elsif (m = STATUS_THEN_COUNTRY_RE.match(core))
+          return playing_result(m[2], m[3], m[1], mp)
+        elsif (m = TURKISH_PLAYING_RE.match(core))
+          return playing_result(m[1], m[3], m[2], mp)
+        elsif (m = JAPANESE_PLAYING_RE.match(core))
+          return playing_result(m[1], m[3], m[2], mp)
+        elsif (m = KOREAN_PLAYING_RE.match(core))
+          return playing_result(m[2], m[1], m[3], mp)
+        elsif (m = CHINESE_PLAYING_RE.match(core))
+          body = m[1].strip
+          year = m[2].to_i
+          if (cm = CHINESE_STATUS_RE.match(body))
+            return playing_result(cm[1], year, cm[2], mp)
+          end
+          return playing_result(body, year, nil, mp)
+        elsif (m = OBSERVER_TAIL_YEAR_RE.match(core))
+          st = m[1].strip
           return {
             phase: GamePhase::IN_GAME,
-            status: m[1].strip,
-            country: m[2].strip,
-            year: m[3].to_i,
-            multiplayer: mp,
-            observer: false
-          }
-        elsif (m = OBSERVER_RE.match(text))
-          return {
-            phase: GamePhase::IN_GAME,
-            status: m[1].strip,
+            status: st,
             country: nil,
             year: m[2].to_i,
             multiplayer: mp,
-            observer: lower.include?("observing")
+            observer: observer_text?(st)
+          }
+        elsif (m = OBSERVER_HEAD_YEAR_RE.match(core))
+          st = m[2].strip
+          return {
+            phase: GamePhase::IN_GAME,
+            status: st,
+            country: nil,
+            year: m[1].to_i,
+            multiplayer: mp,
+            observer: observer_text?(st)
           }
         end
       end
@@ -110,6 +189,23 @@ module Eu5Rpc
         multiplayer: d_lower.end_with?("_mp"),
         observer: d_lower.include?("observer")
       }
+    end
+
+    def self.playing_result(country, year, status, mp)
+      st = status.to_s.strip
+      {
+        phase: GamePhase::IN_GAME,
+        status: st.empty? ? nil : st,
+        country: country.to_s.strip,
+        year: year.to_i,
+        multiplayer: mp,
+        observer: false
+      }
+    end
+
+    def self.observer_text?(text)
+      lower = text.to_s.downcase
+      OBSERVER_KEYWORDS.any? { |kw| lower.include?(kw) }
     end
 
     def self.clean_pdx_text(str)

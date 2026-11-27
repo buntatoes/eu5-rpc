@@ -170,4 +170,80 @@ class TestEu5Rpc < Minitest::Test
     assert_equal Eu5Rpc::GamePhase::MAIN_MENU, state.phase
     assert_nil state.country_name
   end
+
+  def test_steam_rich_presence_non_english_languages
+    # French
+    fr = Eu5Rpc::SteamRichPresence.parse_presence_hash("status" => "En guerre contre l'Angleterre en tant que France, 1340 (multijoueur)")
+    assert_equal "France", fr[:country]
+    assert_equal 1340, fr[:year]
+    assert_equal "En guerre contre l'Angleterre", fr[:status]
+    assert_equal true, fr[:multiplayer]
+
+    # German
+    de = Eu5Rpc::SteamRichPresence.parse_presence_hash("status" => "Herrscht über das Reich als Österreich, 1453 (Mehrspieler)")
+    assert_equal "Österreich", de[:country]
+    assert_equal 1453, de[:year]
+    assert_equal true, de[:multiplayer]
+
+    # Spanish
+    es = Eu5Rpc::SteamRichPresence.parse_presence_hash("status" => "En guerra contra Granada como Castilla, 1444")
+    assert_equal "Castilla", es[:country]
+    assert_equal 1444, es[:year]
+    assert_equal "En guerra contra Granada", es[:status]
+
+    # Brazilian Portuguese
+    pt = Eu5Rpc::SteamRichPresence.parse_presence_hash("status" => "Falência como Portugal, 1500 (Multijogador)")
+    assert_equal "Portugal", pt[:country]
+    assert_equal 1500, pt[:year]
+    assert_equal "Falência", pt[:status]
+    assert_equal true, pt[:multiplayer]
+
+    # Polish
+    pl = Eu5Rpc::SteamRichPresence.parse_presence_hash("status" => "Rządzi królestwem jako Polska, 1410 (gra wieloosobowa)")
+    assert_equal "Polska", pl[:country]
+    assert_equal 1410, pl[:year]
+    assert_equal true, pl[:multiplayer]
+
+    # Russian
+    ru = Eu5Rpc::SteamRichPresence.parse_presence_hash("status" => "Банкрот за державу Московия, 1380\u00A0год (многопользовательская игра)")
+    assert_equal "Московия", ru[:country]
+    assert_equal 1380, ru[:year]
+    assert_equal "Банкрот", ru[:status]
+    assert_equal true, ru[:multiplayer]
+
+    # Turkish
+    tr = Eu5Rpc::SteamRichPresence.parse_presence_hash("status" => "Osmanlı olarak Ülkeyi idare ediyor, 1453 (Çok Oyunculu)")
+    assert_equal "Osmanlı", tr[:country]
+    assert_equal 1453, tr[:year]
+    assert_equal "Ülkeyi idare ediyor", tr[:status]
+    assert_equal true, tr[:multiplayer]
+
+    # Japanese
+    ja = Eu5Rpc::SteamRichPresence.parse_presence_hash("status" => "日本として破産、1467（マルチプレイ）")
+    assert_equal "日本", ja[:country]
+    assert_equal 1467, ja[:year]
+    assert_equal "破産", ja[:status]
+    assert_equal true, ja[:multiplayer]
+
+    # Korean
+    ko = Eu5Rpc::SteamRichPresence.parse_presence_hash("status" => "1392, 조선(으)로 부도(멀티플레이어)")
+    assert_equal "조선", ko[:country]
+    assert_equal 1392, ko[:year]
+    assert_equal "부도", ko[:status]
+    assert_equal true, ko[:multiplayer]
+
+    # Simplified Chinese
+    zh = Eu5Rpc::SteamRichPresence.parse_presence_hash("status" => "作为大明与元朝交战，1368年（多人游戏）")
+    assert_equal "大明", zh[:country]
+    assert_equal 1368, zh[:year]
+    assert_equal "与元朝交战", zh[:status]
+    assert_equal true, zh[:multiplayer]
+
+    # Non-English Main Menu, Lobby, and Observer
+    assert_equal Eu5Rpc::GamePhase::MAIN_MENU, Eu5Rpc::SteamRichPresence.parse_presence_hash("status" => "メインメニュー")[:phase]
+    assert_equal Eu5Rpc::GamePhase::LOBBY, Eu5Rpc::SteamRichPresence.parse_presence_hash("status" => "В лобби")[:phase]
+    obs = Eu5Rpc::SteamRichPresence.parse_presence_hash("status" => "世界の行く末を観測中、1444")
+    assert_equal true, obs[:observer]
+    assert_equal 1444, obs[:year]
+  end
 end
