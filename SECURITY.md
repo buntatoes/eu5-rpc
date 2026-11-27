@@ -6,7 +6,7 @@ Only the latest published release of **EU5 RPC** receives security updates and b
 
 | Version | Supported |
 | ------- | --------- |
-| Latest (`v4.0.x` / `v0.3.x`) | Yes |
+| Latest (`v4.0.x`) | Yes |
 | Older releases | No |
 
 ## Reporting a Vulnerability
