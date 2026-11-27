@@ -1,0 +1,66 @@
+name: Bug Report
+description: Report a bug, incorrect country/year detection, or crash in EU5 RPC.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting an issue! For **security vulnerabilities**, please use [Private Vulnerability Reporting](https://github.com/buntatoes/eu5-rpc/security/advisories/new) instead of a public issue.
+        Please do **not** include personal Steam IDs, Discord tokens, or local usernames in your report.
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - Windows 11
+        - Windows 10
+        - Linux (x86_64)
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: app_version
+    attributes:
+      label: EU5 RPC Version
+      placeholder: "e.g., v0.3.1"
+    validations:
+      required: true
+
+  - type: input
+    id: game_version
+    attributes:
+      label: Europa Universalis V Version & Language
+      placeholder: "e.g., v1.4.x (English)"
+    validations:
+      required: false
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the bug and what Discord showed vs. what you expected.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to Reproduce
+      placeholder: |
+        1. Launch EU5 RPC via Desktop shortcut
+        2. Start or load a campaign as ...
+        3. Observe Discord Rich Presence
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Additional Details
+      description: Paste any sanitized console output (remove any personal info or local paths).
+      render: text
+    validations:
+      required: false

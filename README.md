@@ -71,6 +71,11 @@ ruby -Ilib:test test/test_eu5_rpc.rb
 ruby scripts/package.rb
 ```
 
+## Reporting Bugs & Security Issues
+
+- **Bugs & Feature Requests**: Open an issue using the [Issue Templates](../../issues/new/choose).
+- **Security Vulnerabilities**: Please report privately via [GitHub Security Advisories](https://github.com/buntatoes/eu5-rpc/security/advisories/new) (see [SECURITY.md](SECURITY.md)).
+
 ## License & Disclaimer
 
 Licensed under the **GNU General Public License v3.0 ([GPL-3.0](LICENSE))** by **Buntato**.

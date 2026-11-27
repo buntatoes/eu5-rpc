@@ -1,0 +1,20 @@
+name: Feature Request
+description: Suggest a new feature or enhancement for EU5 RPC.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Feature Summary
+      description: Clearly describe the feature or improvement you would like to see.
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Why is this useful?
+      description: Explain the use case or how it improves Europa Universalis V Rich Presence.
+    validations:
+      required: false
