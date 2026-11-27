@@ -15,7 +15,7 @@
 #include <string.h>
 
 #define APP_DISPLAY_NAME  L"EU5 RPC (Europa Universalis V)"
-#define APP_VERSION       L"0.3.0"
+#define APP_VERSION       L"0.3.1"
 #define APP_PUBLISHER     L"Buntato"
 #define UNINSTALL_REG_KEY L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Eu5RpcRuby"
 #define PAYLOAD_RES_ID    101
@@ -257,7 +257,7 @@ static int do_install(int silent) {
         _snwprintf(
             prompt,
             sizeof(prompt) / sizeof(prompt[0]),
-            L"Install EU5 RPC (Europa Universalis V Discord Rich Presence) v0.3?\n\n"
+            L"Install EU5 RPC (Europa Universalis V Discord Rich Presence) v0.3.1?\n\n"
             L"Install folder:\n%ls\n\n"
             L"This will also create an \"EU5 RPC\" shortcut on your Desktop to launch Europa Universalis V with Discord Rich Presence.",
             install_dir

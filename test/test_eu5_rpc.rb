@@ -141,32 +141,31 @@ class TestEu5Rpc < Minitest::Test
     state.game_version = "1.4.9"
     cfg = Eu5Rpc::Config.new
 
-    # Start playing as Kyiv
+    # Start playing as Principality of Kyiv (real EU5 formatted Steam Rich Presence string)
     rp1 = Eu5Rpc::SteamRichPresence.parse_presence_hash(
-      "steam_display" => "#playing",
-      "COUNTRY" => "Kyiv",
-      "YEAR" => "1337",
-      "STATUS" => "Ruling the realm"
+      "status" => "Tributary under the Golden Horde as Principality of Kyiv, 1337",
+      "steam_display" => "Tributary under the Golden Horde as Principality of Kyiv, 1337"
     )
     state.apply_steam_rich_presence(rp1)
     details1, status1 = state.format_presence(cfg.presence)
-    assert_equal "Playing as Kyiv (1337)", details1
-    assert_equal "Ruling the realm · Singleplayer · v1.4.9", status1
+    assert_equal "Playing as Principality of Kyiv (1337)", details1
+    assert_equal "Tributary under the Golden Horde · Singleplayer · v1.4.9", status1
 
-    # Dynamically swap countries mid-game to Byzantium at war
+    # Dynamically swap countries mid-game to Byzantium at war in Multiplayer
     rp2 = Eu5Rpc::SteamRichPresence.parse_presence_hash(
-      "steam_display" => "#playing",
-      "COUNTRY" => "Byzantium",
-      "YEAR" => "1340",
-      "STATUS" => "At war against Ottomans"
+      "status" => "At war against Ottomans as Byzantium, 1345 (Multiplayer)"
     )
     state.apply_steam_rich_presence(rp2)
     details2, status2 = state.format_presence(cfg.presence)
-    assert_equal "Playing as Byzantium (1340)", details2
-    assert_equal "At war against Ottomans · Singleplayer · v1.4.9", status2
+    assert_equal "Playing as Byzantium (1345)", details2
+    assert_equal "At war against Ottomans · Multiplayer · v1.4.9", status2
 
-    # Return to main menu clears country
-    rp3 = Eu5Rpc::SteamRichPresence.parse_presence_hash("steam_display" => "#main_menu")
+    # Lobby and Main Menu strings
+    rp_lobby = Eu5Rpc::SteamRichPresence.parse_presence_hash("status" => "In Lobby")
+    state.apply_steam_rich_presence(rp_lobby)
+    assert_equal Eu5Rpc::GamePhase::LOBBY, state.phase
+
+    rp3 = Eu5Rpc::SteamRichPresence.parse_presence_hash("status" => "In Main Menu")
     state.apply_steam_rich_presence(rp3)
     assert_equal Eu5Rpc::GamePhase::MAIN_MENU, state.phase
     assert_nil state.country_name

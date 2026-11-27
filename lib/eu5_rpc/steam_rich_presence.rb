@@ -2,17 +2,24 @@
 # SPDX-License-Identifier: GPL-3.0-only
 
 require_relative "steam"
+require_relative "process_watcher"
 require_relative "logger"
 
 module Eu5Rpc
-  # Passively reads the local Steam client's live Rich Presence key-value pairs for the
-  # active user via steamclient64.dll (Windows) or steamclient.so (Linux).
+  # Passively reads the local Steam client's live Rich Presence strings for Europa Universalis V
+  # via steamclient64.dll (Windows) or steamclient.so (Linux).
   #
-  # Why this works cleanly:
-  # - EU5 pushes live Steam Rich Presence (#main_menu, #in_lobby, #playing, COUNTRY, YEAR, STATUS)
-  #   whenever you pick a country, swap countries mid-game, form a nation, or advance the year.
-  # - Uses ISteamClient::ConnectToGlobalUser (passive read-only pipe, no SteamAPI_Init or AppID conflict).
-  # - Never reads game memory, never modifies game files, and never logs or persists your Steam ID.
+  # EU5 publishes live formatted Steam Rich Presence strings such as:
+  #   "In Main Menu"
+  #   "In Lobby"
+  #   "Ruling the realm as Principality of Kyiv, 1337"
+  #   "Tributary under the Golden Horde as Principality of Kyiv, 1337"
+  #   "At war against Ottomans as Byzantium, 1345 (Multiplayer)"
+  #   "Observing how the world unfolds, 1444"
+  #
+  # These update in real time even when switching countries mid-game, forming a nation,
+  # or playing a brand-new unsaved campaign. Only connects while eu5.exe is running and
+  # disconnects immediately on exit. Never reads game memory or logs your Steam ID.
   class SteamRichPresence
     STEAM_CLIENT_IFACE  = "SteamClient021"
     STEAM_USER_IFACE    = "SteamUser023"
@@ -33,27 +40,60 @@ module Eu5Rpc
     VT_FRIENDS_GET_RP_KEY_AT    = 47
     VT_FRIENDS_REQUEST_RP       = 48
 
+    # Matches EU5's localized RICH_PRESENCE_PLAYING / RICH_PRESENCE_PLAYING_MP format:
+    # "<STATUS> as <COUNTRY>, <YEAR>" or "<STATUS> as <COUNTRY>, <YEAR> (Multiplayer)"
+    PLAYING_RE  = /\A(.+?)\s+as\s+(.+?),\s+(\d{3,4})(?:\s+\(Multiplayer\))?\z/i.freeze
+    OBSERVER_RE = /\A(.+?),\s+(\d{3,4})(?:\s+\(Multiplayer\))?\z/i.freeze
+
     def self.parse_presence_hash(raw_map)
       return nil unless raw_map.is_a?(Hash) && !raw_map.empty?
 
       norm = {}
-      raw_map.each { |k, v| norm[k.to_s.downcase] = v.to_s.strip }
+      raw_map.each { |k, v| norm[k.to_s.downcase] = clean_pdx_text(v.to_s) }
 
-      display = norm["steam_display"].to_s.downcase
+      display = norm["steam_display"].to_s
+      status_raw = norm["status"].to_s
+      text = !status_raw.empty? ? status_raw : display
+
+      # 1. Check formatted EU5 localized Rich Presence string first (actual live format)
+      if !text.empty? && !text.start_with?("#")
+        mp = text.include?("(Multiplayer)")
+        lower = text.downcase
+
+        if lower == "in main menu"
+          return { phase: GamePhase::MAIN_MENU, country: nil, year: nil, status: nil, multiplayer: false, observer: false }
+        elsif lower == "in lobby"
+          return { phase: GamePhase::LOBBY, country: nil, year: nil, status: nil, multiplayer: mp, observer: false }
+        elsif (m = PLAYING_RE.match(text))
+          return {
+            phase: GamePhase::IN_GAME,
+            status: m[1].strip,
+            country: m[2].strip,
+            year: m[3].to_i,
+            multiplayer: mp,
+            observer: false
+          }
+        elsif (m = OBSERVER_RE.match(text))
+          return {
+            phase: GamePhase::IN_GAME,
+            status: m[1].strip,
+            country: nil,
+            year: m[2].to_i,
+            multiplayer: mp,
+            observer: lower.include?("observing")
+          }
+        end
+      end
+
+      # 2. Fallback for raw token-style Steam Rich Presence keys (#playing + COUNTRY/YEAR/STATUS)
+      d_lower = display.downcase
       country = norm["country"].to_s
       year_s  = norm["year"].to_s
-      status  = norm["status"].to_s
-
-      # Strip Paradox rich-text formatting codes (e.g., #bold ...#! or [tag]) if present
-      country = clean_pdx_text(country)
-      status  = clean_pdx_text(status)
       year    = year_s.match?(/\A\d{3,4}\z/) ? year_s.to_i : nil
 
-      phase = case display
-              when "#main_menu"
-                GamePhase::MAIN_MENU
-              when "#in_lobby"
-                GamePhase::LOBBY
+      phase = case d_lower
+              when "#main_menu" then GamePhase::MAIN_MENU
+              when "#in_lobby"  then GamePhase::LOBBY
               when "#playing", "#playing_mp", "#playing_observer", "#playing_observer_mp"
                 GamePhase::IN_GAME
               else
@@ -66,15 +106,15 @@ module Eu5Rpc
         phase: phase,
         country: country.empty? ? nil : country,
         year: year,
-        status: status.empty? ? nil : status,
-        multiplayer: display.end_with?("_mp"),
-        observer: display.include?("observer")
+        status: status_raw.empty? ? nil : status_raw,
+        multiplayer: d_lower.end_with?("_mp"),
+        observer: d_lower.include?("observer")
       }
     end
 
     def self.clean_pdx_text(str)
       s = str.to_s.dup
-      s.gsub!(/#[a-zA-Z0-9_]+\s*/, "")
+      s.gsub!(/#[a-zA-Z0-9_]+\s*/, "") unless s.start_with?("#main_menu", "#in_lobby", "#playing")
       s.gsub!(/#!/, "")
       s.strip
     end
@@ -89,15 +129,12 @@ module Eu5Rpc
       @fns = {}
     end
 
-    def available?
-      return false unless Fiddle::SIZEOF_VOIDP == 8
-
-      !find_steamclient_lib.nil?
-    rescue StandardError
-      false
-    end
-
     def poll
+      unless ProcessWatcher.eu5_running?
+        disconnect if @connected
+        return nil
+      end
+
       ensure_connected
       return nil unless @connected && @steam_friends && @steam_id.positive?
 
@@ -151,6 +188,11 @@ module Eu5Rpc
 
       lib_path = find_steamclient_lib
       return unless lib_path
+
+      # Scope our passive Steam IPC pipe to Europa Universalis V so ISteamFriends
+      # returns EU5's active Rich Presence keys without calling SteamAPI_Init.
+      ENV["SteamAppId"]  = Steam::EU5_APP_ID
+      ENV["SteamGameId"] = Steam::EU5_APP_ID
 
       if Gem.win_platform?
         steam_dir = File.dirname(lib_path)
@@ -228,13 +270,11 @@ module Eu5Rpc
 
     def read_steam_id(u_vt, steam_user)
       if Gem.win_platform?
-        # MSVC x64 returns 8-byte CSteamID struct via hidden second pointer argument
         fn = vtable_fn(u_vt, VT_USER_GET_STEAM_ID, [Fiddle::TYPE_VOIDP], Fiddle::TYPE_VOIDP)
         out = [0].pack("Q")
         fn.call(steam_user, out)
         out.unpack1("Q")
       else
-        # System V AMD64 ABI returns 8-byte CSteamID struct in RAX
         fn = vtable_fn(u_vt, VT_USER_GET_STEAM_ID, [], Fiddle::TYPE_LONG_LONG)
         fn.call(steam_user)
       end

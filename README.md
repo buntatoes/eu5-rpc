@@ -6,7 +6,7 @@
   Show your **Europa Universalis V** country, current year, historical Age, campaign mode (Singleplayer / Multiplayer / Observer), game version, and live wars/disasters on your Discord profile automatically. Free, open-source, zero-dependency Ruby tool for **Windows (`.exe` installer)** and **Linux**, licensed under **GPL-3.0**.
 
   <p>
-    <a href="https://github.com/buntatoes/eu5-rpc/releases/latest"><img src="https://img.shields.io/badge/release-v0.3-blue" alt="Latest Release" /></a>
+    <a href="https://github.com/buntatoes/eu5-rpc/releases/latest"><img src="https://img.shields.io/badge/release-v0.3.1-blue" alt="Latest Release" /></a>
     <a href="https://github.com/buntatoes/eu5-rpc/actions/workflows/ci.yml"><img src="https://github.com/buntatoes/eu5-rpc/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
     <a href="#installation--setup"><img src="https://img.shields.io/badge/language-Ruby%203.2%2B-CC342D?logo=ruby&logoColor=white" alt="Ruby 3.2+" /></a>
     <a href="#installation--setup"><img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-blue" alt="Platform: Windows | Linux" /></a>
@@ -26,7 +26,7 @@
   - Displays EU5's six historical Ages beginning in `1337` (`Age of Traditions`, `Age of Renaissance`, `Age of Discovery`, `Age of Reformation`, `Age of Absolutism`, `Age of Revolutions`).
 - **Ironman & Achievement Safe**: Strictly read-only — never reads game memory, modifies save files, installs mods, or intercepts network traffic.
 - **Zero Console Popups**: Uses native Win32 `CreateToolhelp32Snapshot` via Ruby `Fiddle` on Windows (and `/proc` on Linux) to detect `eu5.exe`.
-- **Windows `.exe` Installer + Desktop Shortcut**: `EU5-RPC-Setup-v0.3-win64.exe` installs `eu5-rpc.exe` to `%LOCALAPPDATA%\EU5-RPC`, creates Desktop & Start Menu shortcuts that launch Europa Universalis V (Steam AppID `3450310`) with Discord Rich Presence, and registers Windows Add/Remove Programs uninstall support.
+- **Windows `.exe` Installer + Desktop Shortcut**: `EU5-RPC-Setup-v0.3.1-win64.exe` installs `eu5-rpc.exe` to `%LOCALAPPDATA%\EU5-RPC`, creates Desktop & Start Menu shortcuts that launch Europa Universalis V (Steam AppID `3450310`) with Discord Rich Presence, and registers Windows Add/Remove Programs uninstall support.
 - **Linux Package**: `eu5-rpc-linux-x86_64.tar.gz` includes an XDG desktop entry and `install.sh` installer for `~/.local`.
 
 ## Installation & Setup
@@ -35,8 +35,8 @@ Requires [Ruby 3.2+](https://www.ruby-lang.org/) (tested on Ruby 3.4) and the Di
 
 ### Windows (`.exe` Installer)
 
-1. Download `EU5-RPC-Setup-v0.3-win64.exe` from the [Releases](../../releases) page (or build from source with `ruby scripts/package.rb --exe`).
-2. Run `EU5-RPC-Setup-v0.3-win64.exe` to install to `%LOCALAPPDATA%\EU5-RPC` and create the **"EU5 RPC"** Desktop shortcut.
+1. Download `EU5-RPC-Setup-v0.3.1-win64.exe` from the [Releases](../../releases) page (or build from source with `ruby scripts/package.rb --exe`).
+2. Run `EU5-RPC-Setup-v0.3.1-win64.exe` to install to `%LOCALAPPDATA%\EU5-RPC` and create the **"EU5 RPC"** Desktop shortcut.
 3. Double-click **"EU5 RPC"** on your Desktop to launch Europa Universalis V with Discord Rich Presence automatically.
 
 ### Linux (`.tar.gz` / XDG Desktop Installer)
@@ -55,7 +55,7 @@ eu5-rpc
 | `--no-launch` | Skip launching Europa Universalis V via Steam on startup. |
 | `--launch-with-command -- <command>` | Launch a custom command (for Steam `%command%` launch options). |
 | `--generate-config` | Write a fresh `config.toml` with default settings and exit. |
-| `-v`, `--version` | Print version (`v0.3.0`) and exit. |
+| `-v`, `--version` | Print version (`v0.3.1`) and exit. |
 | `-h`, `--help` | Show CLI usage help. |
 
 ## Building & Testing from Source
@@ -67,7 +67,7 @@ cd eu5-rpc
 # Run unit tests
 ruby -Ilib:test test/test_eu5_rpc.rb
 
-# Build dist/EU5-RPC-Setup-v0.3-win64.exe and dist/eu5-rpc-linux-x86_64.tar.gz
+# Build dist/EU5-RPC-Setup-v0.3.1-win64.exe and dist/eu5-rpc-linux-x86_64.tar.gz
 ruby scripts/package.rb
 ```
 
